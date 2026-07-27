@@ -330,12 +330,12 @@ const aboutGlitchStyles = `
   width: 100%;
 
   background:
-    linear-gradient(
-      90deg,
-      rgba(0,232,255,.25),
-      rgba(255,255,255,.18),
-      rgba(255,45,166,.25)
-    );
+linear-gradient(
+90deg,
+rgba(0,220,255,.18),
+rgba(120,70,255,.25),
+rgba(255,40,170,.18)
+);
 
   mix-blend-mode: screen;
   will-change: transform;
