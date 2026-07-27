@@ -265,9 +265,14 @@ const aboutGlitchStyles = `
   mix-blend-mode: screen;
 }
 .ab-scan-cyan {
-  transform: translateX(-8px);
-  background: rgba(0, 240, 255, 0.12);
-  filter: drop-shadow(6px 0 0 rgba(0, 240, 255, 0.45));
+  transform: translateX(-6px);
+
+  background: rgba(0,232,255,.22);
+
+  filter:
+    blur(.6px)
+    drop-shadow(0 0 8px rgba(0,232,255,.75))
+    drop-shadow(4px 0 0 rgba(0,232,255,.55));
 }
 .ab-scan-magenta {
   transform: translateX(8px);
