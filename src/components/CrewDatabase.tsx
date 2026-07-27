@@ -437,7 +437,7 @@ export default function CrewDatabase() {
       <CrewFXStyles />
 
       {/* Scroll runway */}
- <div style={{ height: '580vh', position: 'relative' }}>
+ <div style={{ height: '500vh', position: 'relative' }}>
         {/* Pinned viewport */}
         <div
           style={{
