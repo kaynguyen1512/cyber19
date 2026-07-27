@@ -185,7 +185,8 @@ export default function DecryptedText({
         for (const e of entries) {
           if (
     e.isIntersecting &&
-    !hasAnimatedRef.current
+    !autoStartedRef.current &&
+    !hasAnimated
 ) {
             autoStartedRef.current = true;
             setHasAnimated(true);
