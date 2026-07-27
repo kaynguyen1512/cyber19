@@ -95,17 +95,17 @@ const depthOpacity = (z: number): number => {
 function SectionHeader() {
   return (
     <div className="relative z-10 mx-auto flex max-w-6xl flex-col items-center px-6 pt-28 pb-20 text-center">
-      <p className="font-mono text-[11px] tracking-[0.5em] text-cyber-magenta">
+      <p className="crew-boot-label font-mono text-[11px] tracking-[0.5em] text-cyber-magenta">
         // CREW DATABASE
       </p>
-      <h2 className="mt-5 font-display text-[clamp(3rem,10vw,7rem)] font-black leading-[0.95] tracking-tight text-white">
+      <h2 className="crew-boot-title mt-5 font-display text-[clamp(3rem,10vw,7rem)] font-black leading-[0.95] tracking-tight text-white">
         LEGENDS <span style={{ color: '#FFE600' }}>NEVER</span> DIE.
       </h2>
-      <p className="mt-6 font-body text-lg italic text-gray-500">
+      <p className="crew-boot-subtitle mt-6 font-body text-lg italic text-gray-500">
         Every legend leaves a mark.
       </p>
       <div
-        className="mt-10 h-px w-20"
+        className="crew-boot-divider mt-10 h-px w-20"
         style={{ background: 'linear-gradient(90deg, transparent, rgba(0,240,255,0.5), transparent)' }}
       />
     </div>
@@ -442,6 +442,7 @@ export default function CrewDatabase() {
  <div style={{ height: '480vh', position: 'relative' }}>
         {/* Pinned viewport */}
         <div
+          className="crew-boot-stage"
           style={{
             position: 'sticky',
             top: 0,

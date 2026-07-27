@@ -8,18 +8,19 @@ gsap.registerPlugin(ScrollTrigger);
  * Crew Database — one-time hologram materialization.
  *
  * Fires once when the Crew section first enters the viewport (~15-20%).
- * Projects the section like a futuristic holographic record: the pinned
- * 3D stage materializes (opacity / translateY / scale / blur / brightness
- * + a brief RGB split <80ms + cyan glow in the first 300ms + a single
- * horizontal scanline sweep), then the header label, title, subtitle and
- * divider resolve in order.
+ * Projects the visible stage and header like a holographic record:
+ *   1. The pinned 3D stage materializes (opacity / y / scale / blur /
+ *      brightness + subtle cyan glow in the first 300ms + a single
+ *      horizontal scanline sweep + a tiny <80ms RGB split glitch).
+ *   2. "// CREW DATABASE" label resolves.
+ *   3. "LEGENDS NEVER DIE." title resolves.
+ *   4. Italic tagline + decorative divider resolve.
+ *   5. Control returns to the existing camera-driven experience.
  *
- * This hook only writes opacity / transform / filter / box-shadow on the
- * section's pinned stage and header pieces. It never touches the scene
- * roots whose transform/opacity are driven by the camera engine, so the
- * existing depth reveal, hover effects, idle animations, particles and
- * background effects are completely untouched. The crew cards themselves
- * continue to appear via their existing scroll-driven camera reveal.
+ * Only opacity / transform / filter / box-shadow are written, and only on
+ * the stage wrapper and header pieces — never on the scene roots the camera
+ * engine owns. Existing depth reveal, hover, idle, particles and background
+ * effects are untouched. Total run ~1.0-1.2s.
  */
 export function useCrewBoot(rootRef: React.RefObject<HTMLElement | null>) {
   useEffect(() => {
@@ -29,26 +30,22 @@ export function useCrewBoot(rootRef: React.RefObject<HTMLElement | null>) {
     const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
     const ctx = gsap.context(() => {
-      // Header pieces (SectionHeader is the first child of the section).
-      const headerWrap = root.querySelector<HTMLElement>(':scope > div');
-      const headerLabel = headerWrap?.querySelector<HTMLElement>('p.font-mono');
-      const headerTitle = headerWrap?.querySelector<HTMLElement>('h2');
-      const headerSubtitle = headerWrap?.querySelector<HTMLElement>('p.italic');
-      const headerDivider = headerWrap?.querySelector<HTMLElement>('.mt-10');
-
-      // Pinned 3D stage (the sticky viewport).
-      const stage = root.querySelector<HTMLElement>(':scope > div > div[style*="sticky"]');
+      const label = root.querySelector<HTMLElement>('.crew-boot-label');
+      const title = root.querySelector<HTMLElement>('.crew-boot-title');
+      const subtitle = root.querySelector<HTMLElement>('.crew-boot-subtitle');
+      const divider = root.querySelector<HTMLElement>('.crew-boot-divider');
+      const stage = root.querySelector<HTMLElement>('.crew-boot-stage');
 
       if (reduce) {
-        gsap.set([headerLabel, headerTitle, headerSubtitle, headerDivider, stage],
-          { opacity: 1, y: 0, scale: 1, filter: 'none', scaleX: 1 });
+        gsap.set([label, title, subtitle, divider, stage],
+          { opacity: 1, y: 0, scale: 1, filter: 'none', scaleX: 1, x: 0 });
         return;
       }
 
       // ── Initial hidden states ────────────────────────────────────────
-      gsap.set([headerLabel, headerTitle, headerSubtitle],
+      gsap.set([label, title, subtitle],
         { opacity: 0, y: 20, filter: 'blur(8px) brightness(0.6)' });
-      gsap.set(headerDivider, { opacity: 0, scaleX: 0, transformOrigin: 'center center' });
+      gsap.set(divider, { opacity: 0, scaleX: 0, transformOrigin: 'center center' });
       gsap.set(stage, { opacity: 0, y: 20, scale: 0.98, filter: 'blur(10px) brightness(0.6)' });
 
       // One-shot scanline overlay appended to the stage (absolute, no layout).
@@ -64,12 +61,12 @@ export function useCrewBoot(rootRef: React.RefObject<HTMLElement | null>) {
         onComplete: () => scanline.remove(),
       });
 
-      // 1. CREW SECTION CONTAINER (the 3D stage) materializes.
+      // 1. CREW STAGE (visible 3D viewport) materializes.
       tl.to(stage, {
           opacity: 1, y: 0, scale: 1, filter: 'blur(0px) brightness(1)',
           duration: 0.6, ease: 'power2.out',
         })
-        // Subtle cyan glow during the first ~300ms of materialization.
+        // Subtle cyan glow during the first ~300ms.
         .fromTo(stage, { boxShadow: '0 0 0 rgba(0,240,255,0)' },
           { boxShadow: '0 0 40px rgba(0,240,255,0.35)', duration: 0.3, ease: 'power2.out' }, 0)
         .to(stage, { boxShadow: '0 0 0 rgba(0,240,255,0)', duration: 0.3, ease: 'power2.out' }, 0.3)
@@ -83,13 +80,13 @@ export function useCrewBoot(rootRef: React.RefObject<HTMLElement | null>) {
           { y: (stage?.offsetHeight ?? 600) + 20, opacity: 0.8, duration: 0.7, ease: 'power1.inOut' }, 0.05)
         .to(scanline, { opacity: 0, duration: 0.1 }, '-=0.1')
 
-        // 2. SECTION TITLE — "// CREW DATABASE" label resolves.
-        .to(headerLabel, { opacity: 1, y: 0, filter: 'blur(0px) brightness(1)', duration: 0.35, ease: 'power3.out' }, 0.2)
-        // 3. SUBTITLE — "LEGENDS NEVER DIE." resolves.
-        .to(headerTitle, { opacity: 1, y: 0, filter: 'blur(0px) brightness(1)', duration: 0.4, ease: 'power3.out' }, 0.35)
-        // italic tagline + divider ride along with the subtitle.
-        .to(headerSubtitle, { opacity: 1, y: 0, filter: 'blur(0px) brightness(1)', duration: 0.35, ease: 'power3.out' }, 0.45)
-        .to(headerDivider, { opacity: 1, scaleX: 1, duration: 0.3, ease: 'power2.out' }, 0.5);
+        // 2. "// CREW DATABASE" label resolves.
+        .to(label, { opacity: 1, y: 0, filter: 'blur(0px) brightness(1)', duration: 0.35, ease: 'power3.out' }, 0.2)
+        // 3. "LEGENDS NEVER DIE." title resolves.
+        .to(title, { opacity: 1, y: 0, filter: 'blur(0px) brightness(1)', duration: 0.4, ease: 'power3.out' }, 0.35)
+        // 4. Italic tagline + decorative divider resolve.
+        .to(subtitle, { opacity: 1, y: 0, filter: 'blur(0px) brightness(1)', duration: 0.35, ease: 'power3.out' }, 0.45)
+        .to(divider, { opacity: 1, scaleX: 1, duration: 0.3, ease: 'power2.out' }, 0.5);
     }, root);
 
     return () => ctx.revert();
