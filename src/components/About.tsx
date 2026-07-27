@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-
+import DecryptedText from "@/components/DecryptedText";
 const MANIFESTO = [
   {
     line: 'REBELS',
