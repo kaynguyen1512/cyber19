@@ -21,13 +21,6 @@ export default function About() {
   const imgRef = useRef<HTMLDivElement>(null);
   const [offset, setOffset] = useState(0);
 
-  useAboutGlitchSweep(
-    sectionRef,
-    scanRef,
-    stripsRef,
-    flashRef,
-    dispMapRef as unknown as React.RefObject<SVGElement>,
-  );
 
   // Slow parallax on the artwork tied to the section's position in the viewport.
   useEffect(() => {
