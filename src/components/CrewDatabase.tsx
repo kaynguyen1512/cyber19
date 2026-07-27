@@ -61,12 +61,11 @@ const DECODE_VELOCITY_LIMIT = 600;
 interface SceneCache {
   z: number;
   opacity: number;
-  bgOpacity: number;
   textOpacity: number[]; // per-slot last opacity
   textY: number[]; // per-slot last translateY px
 }
 function makeCache(): SceneCache {
-  return { z: NaN, opacity: NaN, bgOpacity: NaN, textOpacity: [], textY: [] };
+  return { z: NaN, opacity: NaN, textOpacity: [], textY: [] };
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -363,7 +362,6 @@ function revealText(
 // render when it re-enters. Cancels all in-flight decodes and drops GPU layers.
 function resetScene(
   scene: HTMLDivElement,
-  bg: HTMLDivElement | null,
   textEls: (HTMLElement | null)[],
   cache: SceneCache,
   index: number,
@@ -372,7 +370,6 @@ function resetScene(
   scene.style.transform = `translateZ(${restingZ}px)`;
   scene.style.opacity = '0';
   scene.style.willChange = 'auto';
-  if (bg) bg.style.opacity = '0';
 
   for (const el of textEls) {
     if (!el) continue;
@@ -383,7 +380,6 @@ function resetScene(
 
   cache.z = restingZ;
   cache.opacity = 0;
-  cache.bgOpacity = 0;
   cache.textOpacity = [];
   cache.textY = [];
 }
@@ -391,7 +387,6 @@ function resetScene(
 function useCrewEngine(
   sectionRef: React.RefObject<HTMLElement | null>,
   sceneRefs: React.RefObject<(HTMLDivElement | null)[]>,
-  bgRefs: React.RefObject<(HTMLDivElement | null)[]>,
   textRefs: React.RefObject<(HTMLElement | null)[][]>,
 ) {
   const cacheRef = useRef<(SceneCache | null)[]>([]);
@@ -408,10 +403,9 @@ function useCrewEngine(
     (p) => (p < P_CAMERA ? (p / P_CAMERA) * CAMERA_TRAVEL : CAMERA_TRAVEL),
     (offset) => {
       const scenes = sceneRefs.current;
-      const bgs = bgRefs.current;
       const texts = textRefs.current;
       const caches = cacheRef.current;
-      if (!scenes || !bgs || !texts) return;
+      if (!scenes || !texts) return;
 
       // Track scroll velocity (px / ms) to gate decode during fast scrolling.
       const now = performance.now();
@@ -443,7 +437,7 @@ function useCrewEngine(
           if (!scene) continue;
           let cache = caches[i];
           if (!cache) { cache = makeCache(); caches[i] = cache; }
-          resetScene(scene, bgs[i], texts[i] ?? [], cache, i);
+          resetScene(scene, texts[i] ?? [], cache, i);
         }
       }
       activeRef.current = newActive;
@@ -471,15 +465,6 @@ function useCrewEngine(
           cache.opacity = op;
         }
 
-        const bg = bgs[i];
-        if (bg) {
-          const bgOp = op * 0.55;
-          if (bgOp !== cache.bgOpacity) {
-            bg.style.opacity = String(bgOp);
-            cache.bgOpacity = bgOp;
-          }
-        }
-
         // Reveal: always recompute from current visibility. No progression
         // caching — the write cache inside revealText prevents redundant DOM
         // mutations while allowing full recovery on re-entry.
@@ -505,10 +490,9 @@ function useCrewEngine(
 export default function CrewDatabase() {
   const sectionRef = useRef<HTMLElement | null>(null);
   const sceneRefs = useRef<(HTMLDivElement | null)[]>([]);
-  const bgRefs = useRef<(HTMLDivElement | null)[]>([]);
   const textRefs = useRef<(HTMLElement | null)[][]>([]);
 
-  useCrewEngine(sectionRef, sceneRefs, bgRefs, textRefs);
+  useCrewEngine(sectionRef, sceneRefs, textRefs);
 
   return (
     <section ref={sectionRef} id="crew" className="relative bg-[#050507]">
@@ -527,19 +511,26 @@ export default function CrewDatabase() {
             overflow: 'hidden',
           }}
         >
-          {/* Background atmosphere — each character owns its own fullscreen bg */}
+          {/* Single static background for the entire Crew section */}
           <div className="pointer-events-none absolute inset-0" style={{ zIndex: 0 }}>
-            {CREW.map((m, i) => (
-              <div
-                key={m.name}
-                ref={(el) => { bgRefs.current[i] = el; }}
-                className="absolute inset-0"
-                style={{ opacity: 0 }}
-              >
-                <img src={m.img} alt="" className="h-full w-full object-cover" loading="lazy" />
-                <div className="absolute inset-0 bg-[#050507]/65" />
-              </div>
-            ))}
+            <img
+              src="https://ik.imagekit.io/zznoau6lx/5248762.jpg"
+              alt=""
+              loading="lazy"
+              style={{
+                position: 'absolute',
+                inset: 0,
+                width: '100%',
+                height: '100%',
+                objectFit: 'cover',
+                objectPosition: 'center',
+                pointerEvents: 'none',
+              }}
+            />
+            <div
+              className="absolute inset-0"
+              style={{ background: 'rgba(5,5,7,0.65)' }}
+            />
           </div>
 
           {/* Foreground 3D scene */}
