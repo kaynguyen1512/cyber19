@@ -183,7 +183,10 @@ export default function DecryptedText({
     const obs = new IntersectionObserver(
       (entries) => {
         for (const e of entries) {
-          if (e.isIntersecting && !autoStartedRef.current && !hasAnimated) {
+          if (
+    e.isIntersecting &&
+    !hasAnimatedRef.current
+) {
             autoStartedRef.current = true;
             setHasAnimated(true);
             runAnimation();
