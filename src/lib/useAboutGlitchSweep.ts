@@ -2,76 +2,130 @@ import { useEffect } from 'react';
 import gsap from 'gsap';
 
 /**
- * About section — premium ambient "signal interference" sweep.
+ * About section — premium "signal scanner" glitch.
  *
- * A thin horizontal band (4–8px) travels vertically through the section,
- * briefly corrupting only the pixels it passes over. After a long random
- * idle (6–10s) it reappears from a new random position. Everything outside
- * the band stays perfectly stable.
+ * A single horizontal band (≈22px, soft falloff) travels top→bottom through
+ * the section at constant speed over 4–6s. Only the pixels inside the moving
+ * band are corrupted: the real content is cloned into an overlay layer that
+ * is revealed exclusively through a moving clip-path slice. The clone carries
+ * RGB-split drop-shadows, a horizontal tearing jitter, a brightness lift and
+ * a faint noise texture — so the glitch exists ONLY inside the band.
  *
- * Only transform / opacity are written — no layout, no rerenders, GPU-friendly.
+ * Everything outside the band is untouched. No React re-renders; only
+ * transform / opacity / clip-path / filter are animated. GPU-friendly.
  */
 export function useAboutGlitchSweep(
   sectionRef: React.RefObject<HTMLElement | null>,
+  cloneRef: React.RefObject<HTMLDivElement | null>,
+  contentRef: React.RefObject<HTMLDivElement | null>,
 ) {
   useEffect(() => {
     const section = sectionRef.current;
-    if (!section) return;
+    const clone = cloneRef.current;
+    const content = contentRef.current;
+    if (!section || !clone || !content) return;
 
-    const band = section.querySelector<HTMLElement>('.ab-glitch');
-    if (!band) return;
+    const reduce = window.matchMedia(
+      '(prefers-reduced-motion: reduce)',
+    ).matches;
+    if (reduce) return;
 
-    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (reduce) {
-      gsap.set(band, { opacity: 0 });
-      return;
-    }
+    // --- Build the duplicated layer once -----------------------------------
+    const copy = content.cloneNode(true) as HTMLElement;
+    copy.removeAttribute('id');
+    copy.querySelectorAll('[id]').forEach((el) => el.removeAttribute('id'));
+    // Neutralise interactive/parallax bits in the clone so it stays aligned.
+    copy.querySelectorAll('video').forEach((v) => {
+      const vid = v as HTMLVideoElement;
+      vid.muted = true;
+      vid.preload = 'auto';
+      try {
+        vid.currentTime = 0;
+      } catch {
+        /* ignore */
+      }
+    });
 
+    const inner = document.createElement('div');
+    inner.className = 'ab-clone-inner';
+    inner.appendChild(copy);
+
+    const fx = document.createElement('div');
+    fx.className = 'ab-clone-fx';
+
+    const noise = document.createElement('div');
+    noise.className = 'ab-clone-noise';
+
+    clone.appendChild(inner);
+    clone.appendChild(fx);
+    clone.appendChild(noise);
+
+    const BAND = 22; // px — within the 18–26 spec
+    const rnd = (a: number, b: number) => a + Math.random() * (b - a);
     let killed = false;
 
-    const measure = () => section.offsetHeight;
-    const rnd = (min: number, max: number) => min + Math.random() * (max - min);
-
-    // One sweep: fade in, travel a random span, fade out.
+    // --- One sweep ---------------------------------------------------------
     const sweep = () => {
       if (killed) return;
+      const H = section.offsetHeight;
+      const dur = rnd(4, 6);
 
-      const h = measure();
-      // Band height varies 4–8px per sweep for organic feel.
-      const bh = rnd(4, 8);
-      band.style.height = `${bh}px`;
-
-      // Random vertical travel span — sometimes full, sometimes partial.
-      const span = rnd(0.45, 1) * h;
-      // Start somewhere above the section so it enters cleanly.
-      const startY = rnd(-40, h * 0.25);
-      const endY = startY + span + rnd(40, 120);
-
-      // Duration 0.3–0.6s.
-      const dur = rnd(0.3, 0.6);
-
-      gsap.set(band, { y: startY, opacity: 0 });
+      const proxy = { y: -BAND };
+      gsap.set(clone, { opacity: 0 });
+      clone.style.clipPath = `inset(0px 0 ${H}px 0)`;
+      fx.style.transform = `translateY(${-BAND}px)`;
 
       const tl = gsap.timeline({
         onComplete: () => {
           if (killed) return;
-          // Long random pause, then sweep again.
-          gsap.delayedCall(rnd(6, 10), sweep);
+          gsap.delayedCall(rnd(8, 15), sweep);
         },
       });
 
-      tl.to(band, { opacity: 1, duration: 0.08, ease: 'power2.out' })
-        .to(band, { y: endY, duration: dur, ease: 'power1.inOut' }, '<')
-        .to(band, { opacity: 0, duration: 0.12, ease: 'power2.in' }, '-=0.12');
+      tl.to(clone, { opacity: 1, duration: 0.45, ease: 'power2.out' })
+        .to(
+          proxy,
+          {
+            y: H,
+            duration: dur,
+            ease: 'none',
+            onUpdate: () => {
+              const y = proxy.y;
+              const top = Math.max(0, y);
+              const bottom = Math.max(0, H - y - BAND);
+              clone.style.clipPath = `inset(${top}px 0 ${bottom}px 0)`;
+              fx.style.transform = `translateY(${y}px)`;
+            },
+          },
+          '<',
+        )
+        // Horizontal tearing jitter — tiny random offsets throughout the sweep.
+        .to(
+          inner,
+          {
+            x: 'random(-4,4)',
+            duration: 0.07,
+            repeat: Math.floor(dur / 0.07),
+            repeatRefresh: true,
+            ease: 'none',
+          },
+          '<',
+        )
+        .to(
+          clone,
+          { opacity: 0, duration: 0.45, ease: 'power2.in' },
+          `-=${0.45}`,
+        );
     };
 
-    // First sweep after a short delay.
-    gsap.delayedCall(rnd(2, 5), sweep);
+    gsap.delayedCall(rnd(8, 15), sweep);
 
     return () => {
       killed = true;
-      gsap.killTweensOf(band);
-      gsap.globalTimeline.killTweensOf(band);
+      gsap.killTweensOf(clone);
+      gsap.killTweensOf(inner);
+      gsap.killTweensOf(fx);
+      clone.innerHTML = '';
     };
-  }, [sectionRef]);
+  }, [sectionRef, cloneRef, contentRef]);
 }

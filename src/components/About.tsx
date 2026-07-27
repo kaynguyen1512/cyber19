@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react';
-import { IMAGES } from '@/lib/images';
 import { useAboutGlitchSweep } from '@/lib/useAboutGlitchSweep';
 
 const MANIFESTO = [
@@ -19,10 +18,12 @@ const MANIFESTO = [
 
 export default function About() {
   const sectionRef = useRef<HTMLElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const cloneRef = useRef<HTMLDivElement>(null);
   const imgRef = useRef<HTMLDivElement>(null);
   const [offset, setOffset] = useState(0);
 
-  useAboutGlitchSweep(sectionRef);
+  useAboutGlitchSweep(sectionRef, cloneRef, contentRef);
 
   // Slow parallax on the artwork tied to the section's position in the viewport.
   useEffect(() => {
@@ -53,7 +54,7 @@ export default function About() {
       ref={sectionRef}
       className="relative overflow-hidden bg-cyber-darker px-6 pt-32 pb-16 sm:pt-40 sm:pb-20"
     >
-      <AboutGlitchBand />
+      <AboutGlitchStyles />
 
       {/* faint horizon glow */}
       <div className="pointer-events-none absolute inset-0 -z-10">
@@ -61,7 +62,10 @@ export default function About() {
         <div className="absolute bottom-0 left-0 h-[30rem] w-[30rem] rounded-full bg-cyber-cyan/5 blur-[120px]" />
       </div>
 
-      <div className="mx-auto max-w-6xl">
+      {/* Glitch clone overlay — revealed only through a moving clip-path slice. */}
+      <div ref={cloneRef} className="ab-clone" aria-hidden />
+
+      <div ref={contentRef} className="mx-auto max-w-6xl">
         {/* Editorial two-column block */}
         <div className="grid items-center gap-16 lg:grid-cols-[55%_45%] lg:gap-20">
           {/* Text column */}
@@ -160,67 +164,68 @@ export default function About() {
 }
 
 /* ═══════════════════════════════════════════════════════════════════
-   AMBIENT GLITCH BAND — thin horizontal "signal interference" sweep.
-   Sits absolutely over the About section. The band itself is moved by
-   useAboutGlitchSweep (GSAP). Inside the band, duplicated RGB-split
-   layers of the section content are revealed only through clip-path,
-   so only the pixels under the band are corrupted. Everything else
-   stays perfectly stable.
+   SIGNAL SCANNER GLITCH — About section only.
+   A single horizontal band travels top→bottom at constant speed. The real
+   section content is cloned into .ab-clone, revealed only through a moving
+   clip-path slice. Inside that slice the clone carries RGB-split drop-shadows,
+   a horizontal tearing jitter, a brightness lift and faint noise — so the
+   glitch exists ONLY inside the moving band. Everything else is untouched.
+   Movement/timing/opacity via GSAP; clip-path/transform/filter via CSS.
    ═══════════════════════════════════════════════════════════════════ */
 
-function AboutGlitchBand() {
-  return (
-    <div className="ab-glitch" aria-hidden>
-      <style>{`
-.ab-glitch {
+const aboutGlitchStyles = `
+.ab-clone {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  pointer-events: none;
+  opacity: 0;
+  clip-path: inset(0 0 100% 0);
+  will-change: opacity, clip-path;
+  overflow: hidden;
+}
+.ab-clone-inner {
+  position: absolute;
+  inset: 0;
+  will-change: transform;
+  filter:
+    drop-shadow(-2px 0 0 rgba(0,240,255,0.55))
+    drop-shadow(2px 0 0 rgba(255,0,168,0.55));
+  background: rgba(255,255,255,0.02);
+}
+.ab-clone-fx {
   position: absolute;
   left: 0;
   right: 0;
+  height: 22px;
   top: 0;
-  height: 6px;
   pointer-events: none;
-  z-index: 30;
-  opacity: 0;
-  will-change: transform, opacity;
-  overflow: hidden;
-  /* Genuinely corrupt the pixels beneath the band — brightness/contrast/saturation
-     spike + slight hue rotation = "signal becoming unstable" on real content. */
-  backdrop-filter: brightness(1.35) contrast(1.45) saturate(1.9) hue-rotate(18deg);
-  -webkit-backdrop-filter: brightness(1.35) contrast(1.45) saturate(1.9) hue-rotate(18deg);
-}
-/* RGB-split channel layers — the Codrops technique: duplicated, offset,
-   color-isolated slices that read as chromatic aberration inside the band. */
-.ab-glitch::before,
-.ab-glitch::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background-image:
-    repeating-linear-gradient(90deg,
-      rgba(255,255,255,0.04) 0px,
-      rgba(255,255,255,0.04) 1px,
-      transparent 1px,
-      transparent 2px),
-    linear-gradient(90deg,
-      transparent 0%,
-      rgba(0,240,255,0.14) 28%,
-      rgba(255,0,168,0.14) 72%,
-      transparent 100%);
+  will-change: transform;
+  background: linear-gradient(to bottom,
+    transparent 0%,
+    rgba(0,240,255,0.06) 18%,
+    rgba(255,255,255,0.10) 50%,
+    rgba(255,0,168,0.06) 82%,
+    transparent 100%);
   mix-blend-mode: screen;
 }
-.ab-glitch::before {
-  /* cyan channel — offset left, cyan drop-shadow */
-  transform: translateX(-3px);
-  filter: drop-shadow(2px 0 0 rgba(0,240,255,0.6));
-  opacity: 0.75;
+.ab-clone-noise {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.5;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='80' height='80'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.35'/%3E%3C/svg%3E");
+  background-size: 80px 80px;
+  animation: ab-noise-shift 0.5s steps(2) infinite;
 }
-.ab-glitch::after {
-  /* magenta channel — offset right, magenta drop-shadow */
-  transform: translateX(3px);
-  filter: drop-shadow(-2px 0 0 rgba(255,0,168,0.6));
-  opacity: 0.75;
+@keyframes ab-noise-shift {
+  0% { transform: translate(0,0); }
+  50% { transform: translate(-4px,2px); }
+  100% { transform: translate(3px,-3px); }
 }
-      `}</style>
-    </div>
-  );
+`;
+
+function AboutGlitchStyles() {
+  return <style>{aboutGlitchStyles}</style>;
 }
