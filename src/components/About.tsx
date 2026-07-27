@@ -256,10 +256,10 @@ const aboutGlitchStyles = `
   inset: 0;
 
   backdrop-filter:
-    brightness(1.35)
-    contrast(1.7)
-    saturate(2.1)
-    hue-rotate(-4deg);
+brightness(1.08)
+contrast(1.55)
+saturate(2.4)
+hue-rotate(-8deg);
 
   -webkit-backdrop-filter:
     brightness(1.35)
