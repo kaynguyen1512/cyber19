@@ -266,6 +266,31 @@
     color: #00F0FF;
   }
 
+  /* Crew Database — final boss one-shot glitch (RGB split, 180ms, then stable) */
+  .crew-glitch {
+    position: relative;
+    animation: crew-glitch 180ms steps(8) 1 forwards;
+  }
+  .crew-glitch::before,
+  .crew-glitch::after {
+    content: attr(data-text);
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    pointer-events: none;
+  }
+  .crew-glitch::before {
+    color: #00F0FF;
+    animation: crew-glitch-split-c 180ms steps(8) 1 forwards;
+  }
+  .crew-glitch::after {
+    color: #FF2D2D;
+    animation: crew-glitch-split-m 180ms steps(8) 1 forwards;
+  }
+
   /* Hero — subtle Lucy-appears logo pulse (~180ms, premium, not aggressive) */
   .hero-lucy-pulse {
     animation: hero-lucy-pulse 180ms ease-out 1;
@@ -331,6 +356,14 @@
   60% { transform: translate(-3px, -2px); }
   80% { transform: translate(-3px, 2px); }
   100% { transform: translate(0); }
+}
+
+/* Crew Database — virtual camera handheld drift (Phase 05) */
+@keyframes crew-cam-drift {
+  0%, 100% { transform: translate(0, 0) rotate(0deg); }
+  25% { transform: translate(2px, -3px) rotate(-0.15deg); }
+  50% { transform: translate(-1px, 2px) rotate(0.1deg); }
+  75% { transform: translate(-2px, -1px) rotate(-0.05deg); }
 }
 
 /* ═══════════════════════════════════════════════════════════════════
