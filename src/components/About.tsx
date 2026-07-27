@@ -75,8 +75,15 @@ export default function About() {
   className="reveal mt-6 font-display text-5xl font-black leading-[1.05] tracking-tight text-white sm:text-6xl md:text-7xl"
   style={{ transitionDelay: "80ms" }}
 >
-  THE CITY<br />
-  <span className="text-cyber-yellow">NEVER</span> SLEEPS.
+  <DecryptedText
+    speed={50}
+    maxIterations={8}
+    segments={[
+      { text: "THE CITY\n" },
+      { text: "NEVER", className: "text-cyber-yellow" },
+      { text: " SLEEPS." },
+    ]}
+  />
 </h2>
 
             <div
