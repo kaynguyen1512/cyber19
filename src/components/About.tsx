@@ -360,21 +360,22 @@ const aboutGlitchStyles = `
 }
 
 /* Soft scanline glow — rounded falloff, not a neon laser. */
- .ab-scan-glow {
+.ab-scan-glow {
   position: absolute;
   inset: 0;
 
   background:
     linear-gradient(
       to bottom,
-      transparent,
-      rgba(0,232,255,.12),
-      rgba(247,252,255,.28),
-      rgba(255,45,166,.12),
-      transparent
+      transparent 0%,
+      rgba(0,230,255,.08) 18%,
+      rgba(120,70,255,.22) 42%,
+      rgba(255,0,170,.18) 60%,
+      rgba(255,180,0,.10) 78%,
+      transparent 100%
     );
 
-  filter: blur(2px);
+  filter: blur(1.4px);
 
   mix-blend-mode: screen;
 }
