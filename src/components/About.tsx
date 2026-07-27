@@ -347,12 +347,12 @@ rgba(255,40,170,.18)
   inset: 0;
 
   background:
-    linear-gradient(
-      90deg,
-      rgba(0,232,255,.45),
-      rgba(255,255,255,.55),
-      rgba(255,45,166,.45)
-    );
+linear-gradient(
+90deg,
+rgba(0,220,255,.22),
+rgba(120,70,255,.35),
+rgba(255,30,170,.22)
+);
 
   mix-blend-mode: screen;
   opacity: 0;
