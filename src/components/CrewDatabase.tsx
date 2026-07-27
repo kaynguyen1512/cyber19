@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import type { CSSProperties } from 'react';
 import { useCameraScroll } from '@/lib/cameraController';
+import { useCrewBoot } from '@/lib/useCrewBoot';
 import gsap from 'gsap';
 import { IMAGES } from '@/lib/images';
 
@@ -430,6 +431,7 @@ export default function CrewDatabase() {
   const textRefs = useRef<(HTMLElement | null)[][]>([]);
 
   useCrewEngine(sectionRef, sceneRefs, textRefs);
+  useCrewBoot(sectionRef);
 
   return (
     <section ref={sectionRef} id="crew" className="relative bg-[#050507]">
