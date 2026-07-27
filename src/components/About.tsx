@@ -59,25 +59,6 @@ export default function About() {
 
       {/* ── CRT signal-scanner glitch overlay (no DOM clone) ── */}
 
-      <div ref={scanRef} className="ab-scan" aria-hidden>
-        {/* Contrast / brightness / saturation boost on real pixels */}
-        <div className="ab-scan-grade" />
-        {/* RGB split — cyan shifted left, magenta shifted right */}
-        <div className="ab-scan-rgb ab-scan-cyan" />
-        <div className="ab-scan-rgb ab-scan-magenta" />
-        {/* Fractal-noise overlay, displaced by the SVG filter */}
-        <div className="ab-scan-noise" />
-        {/* Horizontal tearing strips — random independent shifts */}
-        <div ref={stripsRef} className="ab-scan-strips">
-          {Array.from({ length: 7 }).map((_, i) => (
-            <div key={i} className="ab-strip" />
-          ))}
-        </div>
-        {/* Occasional white interference flash */}
-        <div ref={flashRef} className="ab-scan-flash" />
-        {/* Soft scanline glow — rounded falloff, not neon */}
-        <div className="ab-scan-glow" />
-      </div>
 
       <div className="mx-auto max-w-6xl">
         {/* Editorial two-column block */}
