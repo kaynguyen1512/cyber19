@@ -157,15 +157,3 @@ export default function About() {
     </section>
   );
 }
-
-/* ═══════════════════════════════════════════════════════════════════
-   CRT SIGNAL SCANNER — About section only, no DOM clone.
-   A thin overlay (.ab-scan) travels top→bottom. Its children sample the
-   REAL pixels behind them via backdrop-filter, so only the pixels under
-   the moving band are corrupted. The SVG feTurbulence+feDisplacementMap
-   drives the horizontal tearing; its scale animates only during a sweep.
-   ═══════════════════════════════════════════════════════════════════ */
-
-function AboutGlitchStyles() {
-  return <style>{aboutGlitchStyles}</style>;
-}
