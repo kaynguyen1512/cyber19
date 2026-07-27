@@ -345,7 +345,15 @@ const aboutGlitchStyles = `
 .ab-scan-flash {
   position: absolute;
   inset: 0;
-  background: rgba(255, 255, 255, 0.85);
+
+  background:
+    linear-gradient(
+      90deg,
+      rgba(0,232,255,.45),
+      rgba(255,255,255,.55),
+      rgba(255,45,166,.45)
+    );
+
   mix-blend-mode: screen;
   opacity: 0;
   will-change: opacity;
