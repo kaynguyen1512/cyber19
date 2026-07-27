@@ -72,11 +72,17 @@ export default function About() {
             </div>
 
 <h2
-  className="reveal mt-6 font-display text-5xl font-black leading-[1.05] tracking-tight text-white sm:text-6xl md:text-7xl"
-  style={{ transitionDelay: '80ms' }}
+  className="reveal mt-6 font-display text-5xl font-black leading-[1.05] tracking-tight sm:text-6xl md:text-7xl"
+  style={{ transitionDelay: "80ms" }}
 >
-  THE CITY<br />
-  <span className="text-cyber-yellow">NEVER</span> SLEEPS.
+  <DecryptedText
+    text={"THE CITY\nNEVER SLEEPS."}
+    animateOn="view"
+    sequential
+    speed={35}
+    className="text-white"
+    encryptedClassName="text-cyber-yellow"
+  />
 </h2>
 
             <div
