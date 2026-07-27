@@ -96,13 +96,16 @@ export default function DecryptedText({
   );
   const [revealedCount, setRevealedCount] = useState(0);
   const [done, setDone] = useState(false);
-  // Guards the automatic viewport trigger so it fires at most once.
-  const [hasAnimated, setHasAnimated] = useState(false);
 
   // ── Refs ─────────────────────────────────────────────────────────────────
   const containerRef = useRef<HTMLSpanElement>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const autoStartedRef = useRef(false);
+  // Guards the automatic viewport trigger so it fires at most once.
+  const hasAnimatedRef = useRef(false);
+  // Guards the animation loop so only one runs at a time.
+  const animatingRef = useRef(false);
+  // Tracks the last-seen text content so we only reset on real changes.
+  const lastTextRef = useRef<string>('');
 
   // ── Per-frame delay: slow down for the trailing characters ───────────────
   const frameDelay = useCallback(
@@ -115,6 +118,10 @@ export default function DecryptedText({
 
   // ── Core animation loop (recursive setTimeout for variable speed) ───────
   const runAnimation = useCallback(() => {
+    // Only one animation loop may exist at any time.
+    if (animatingRef.current) return;
+    animatingRef.current = true;
+
     if (timeoutRef.current) {
       clearTimeout(timeoutRef.current);
       timeoutRef.current = null;
@@ -126,6 +133,17 @@ export default function DecryptedText({
     setDisplay(
       tokens.map((t) => (isPreserved(t.char) ? t.char : randomChar())),
     );
+
+    const finish = () => {
+      setDisplay(tokens.map((t) => t.char));
+      setRevealedCount(length);
+      setDone(true);
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
+      animatingRef.current = false;
+    };
 
     const tick = () => {
       frame += 1;
@@ -142,13 +160,7 @@ export default function DecryptedText({
       // Phase 2 — lock characters left → right, one per frame.
       const revealUpTo = frame - maxIterations;
       if (revealUpTo >= length) {
-        setDisplay(tokens.map((t) => t.char));
-        setRevealedCount(length);
-        setDone(true);
-        if (timeoutRef.current) {
-          clearTimeout(timeoutRef.current);
-          timeoutRef.current = null;
-        }
+        finish();
         return;
       }
 
@@ -165,33 +177,30 @@ export default function DecryptedText({
     timeoutRef.current = setTimeout(tick, speed);
   }, [tokens, length, maxIterations, speed, randomChar, frameDelay]);
 
-  // ── Seed the display as fully scrambled whenever tokens change ───────────
+  // ── Reset display/state only when the actual text content changes ────────
+  const textContent = useMemo(() => tokens.map((t) => t.char).join(''), [tokens]);
   useEffect(() => {
+    if (lastTextRef.current === textContent) return;
+    lastTextRef.current = textContent;
     setDisplay(
       tokens.map((t) => (isPreserved(t.char) ? t.char : randomChar())),
     );
     setRevealedCount(0);
     setDone(false);
-    autoStartedRef.current = false;
-  }, [tokens, randomChar]);
+  }, [textContent, tokens, randomChar]);
 
   // ── Viewport-triggered one-shot reveal (fires only once) ──────────────────
   useEffect(() => {
     const el = containerRef.current;
-    if (!el || length === 0) return;
+    if (!el || length === 0 || hasAnimatedRef.current) return;
 
     const obs = new IntersectionObserver(
       (entries) => {
         for (const e of entries) {
-          if (
-    e.isIntersecting &&
-    !autoStartedRef.current &&
-    !hasAnimated
-) {
-            autoStartedRef.current = true;
-            setHasAnimated(true);
-            runAnimation();
+          if (e.isIntersecting && !hasAnimatedRef.current) {
+            hasAnimatedRef.current = true;
             obs.disconnect();
+            runAnimation();
             break;
           }
         }
@@ -203,7 +212,7 @@ export default function DecryptedText({
     return () => {
       obs.disconnect();
     };
-  }, [length, hasAnimated, runAnimation]);
+  }, [length, runAnimation]);
 
   // ── Manual replay on click ────────────────────────────────────────────────
   const handleClick = useCallback(() => {
@@ -217,6 +226,7 @@ export default function DecryptedText({
         clearTimeout(timeoutRef.current);
         timeoutRef.current = null;
       }
+      animatingRef.current = false;
     };
   }, []);
 
