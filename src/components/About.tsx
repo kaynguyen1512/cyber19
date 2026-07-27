@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { IMAGES } from '@/lib/images';
+import { useAboutGlitchSweep } from '@/lib/useAboutGlitchSweep';
 
 const MANIFESTO = [
   {
@@ -20,6 +21,8 @@ export default function About() {
   const sectionRef = useRef<HTMLElement>(null);
   const imgRef = useRef<HTMLDivElement>(null);
   const [offset, setOffset] = useState(0);
+
+  useAboutGlitchSweep(sectionRef);
 
   // Slow parallax on the artwork tied to the section's position in the viewport.
   useEffect(() => {
@@ -50,6 +53,8 @@ export default function About() {
       ref={sectionRef}
       className="relative overflow-hidden bg-cyber-darker px-6 pt-32 pb-16 sm:pt-40 sm:pb-20"
     >
+      <AboutGlitchBand />
+
       {/* faint horizon glow */}
       <div className="pointer-events-none absolute inset-0 -z-10">
         <div className="absolute left-1/2 top-1/3 h-[40rem] w-[40rem] -translate-x-1/2 rounded-full bg-cyber-magenta/5 blur-[120px]" />
@@ -151,5 +156,71 @@ export default function About() {
         </div>
       </div>
     </section>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   AMBIENT GLITCH BAND — thin horizontal "signal interference" sweep.
+   Sits absolutely over the About section. The band itself is moved by
+   useAboutGlitchSweep (GSAP). Inside the band, duplicated RGB-split
+   layers of the section content are revealed only through clip-path,
+   so only the pixels under the band are corrupted. Everything else
+   stays perfectly stable.
+   ═══════════════════════════════════════════════════════════════════ */
+
+function AboutGlitchBand() {
+  return (
+    <div className="ab-glitch" aria-hidden>
+      <style>{`
+.ab-glitch {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 6px;
+  pointer-events: none;
+  z-index: 30;
+  opacity: 0;
+  will-change: transform, opacity;
+  overflow: hidden;
+  /* Genuinely corrupt the pixels beneath the band — brightness/contrast/saturation
+     spike + slight hue rotation = "signal becoming unstable" on real content. */
+  backdrop-filter: brightness(1.35) contrast(1.45) saturate(1.9) hue-rotate(18deg);
+  -webkit-backdrop-filter: brightness(1.35) contrast(1.45) saturate(1.9) hue-rotate(18deg);
+}
+/* RGB-split channel layers — the Codrops technique: duplicated, offset,
+   color-isolated slices that read as chromatic aberration inside the band. */
+.ab-glitch::before,
+.ab-glitch::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    repeating-linear-gradient(90deg,
+      rgba(255,255,255,0.04) 0px,
+      rgba(255,255,255,0.04) 1px,
+      transparent 1px,
+      transparent 2px),
+    linear-gradient(90deg,
+      transparent 0%,
+      rgba(0,240,255,0.14) 28%,
+      rgba(255,0,168,0.14) 72%,
+      transparent 100%);
+  mix-blend-mode: screen;
+}
+.ab-glitch::before {
+  /* cyan channel — offset left, cyan drop-shadow */
+  transform: translateX(-3px);
+  filter: drop-shadow(2px 0 0 rgba(0,240,255,0.6));
+  opacity: 0.75;
+}
+.ab-glitch::after {
+  /* magenta channel — offset right, magenta drop-shadow */
+  transform: translateX(3px);
+  filter: drop-shadow(-2px 0 0 rgba(255,0,168,0.6));
+  opacity: 0.75;
+}
+      `}</style>
+    </div>
   );
 }
