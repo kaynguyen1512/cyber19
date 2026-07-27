@@ -35,7 +35,7 @@ const DAVID_INDEX = COUNT - 1;      // 6
 /* ═══════════════════════════════════════════════════════════════════
    DEPTH SYSTEM — evenly spaced translateZ, real perspective
    ═══════════════════════════════════════════════════════════════════ */
-const START_Z = 650;        // thêm dòng này
+const START_Z = 650;
 const SPACING = 1500;               // px between characters (translateZ)
 const PERSPECTIVE = 1000;           // parent perspective px
 const CAMERA_TRAVEL = COUNT * SPACING; // 7000 — full camera travel
@@ -50,23 +50,21 @@ const REVEAL_START = 1900;           // text begins revealing this far before ca
 const P_CAMERA = 0.8;               // camera reaches David at this progress
 const DAVID_DWELL = 0.1;            // David's reveal window after reaching camera
 
-// Reveal throttling: revealText is only re-run when the reveal parameter f
-// changes by at least this much. Below this, text opacity/transform deltas
-// are sub-pixel and invisible.
-const REVEAL_THRESHOLD = 0.003;
+// Active window radius — scenes within current ± WINDOW_RADIUS receive updates.
+const WINDOW_RADIUS = 2;
 
 // Per-scene DOM write cache. Tracks the last value written for each property
-// so we can skip style mutations that would not change anything.
+// so we can skip style mutations that would not change anything. Reveal
+// progression itself is NEVER cached — only individual DOM writes.
 interface SceneCache {
   transform: string;
   opacity: string;
   bgOpacity: string;
-  revealF: number;       // last f fed to revealText (NaN = never)
   textOpacity: string[]; // per-slot last opacity
   textTransform: string[]; // per-slot last transform
 }
 function makeCache(): SceneCache {
-  return { transform: '', opacity: '', bgOpacity: '', revealF: NaN, textOpacity: [], textTransform: [] };
+  return { transform: '', opacity: '', bgOpacity: '', textOpacity: [], textTransform: [] };
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -123,16 +121,6 @@ interface SceneRefs {
 function CrewScene({ member, index, refs }: { member: CrewMember; index: number; refs: SceneRefs }) {
   const isFinal = member.side === 'center';
   const isLeft = member.side === 'left';
-  const sceneRootRef = useRef<HTMLDivElement | null>(null);
-  const nameElRef = useRef<HTMLHeadingElement | null>(null);
-
-  const handleHover = () => {
-    const scene = sceneRootRef.current;
-    const name = nameElRef.current;
-    if (!scene || !name) return;
-    if (parseFloat(scene.style.opacity || '0') < 0.5) return;
-    triggerCrewGlitch(scene, name);
-  };
 
   const sceneStyle: CSSProperties = {
     position: 'absolute',
@@ -141,7 +129,7 @@ function CrewScene({ member, index, refs }: { member: CrewMember; index: number;
     width: '100%',
     height: '100%',
     transformStyle: 'preserve-3d',
-transform: `translateZ(${-START_Z - index * SPACING}px)`,
+    transform: `translateZ(${-START_Z - index * SPACING}px)`,
     opacity: 0,
     pointerEvents: 'none',
     willChange: 'transform, opacity',
@@ -193,39 +181,37 @@ transform: `translateZ(${-START_Z - index * SPACING}px)`,
         {member.codename}
       </p>
       <div
-  ref={(el) => refs.text(3, el)}
-  className={`mt-3 flex flex-col ${align}`}
-  style={{ opacity: 0, willChange: 'transform, opacity' }}
->
-  <span
-    className="font-mono text-[11px] tracking-[0.25em]"
-    style={{
-      color: '#FFE86A',
-      textShadow: '0 0 5px rgba(255,230,0,.35)',
-    }}
-  >
-    {member.meta[0]}
-  </span>
+        ref={(el) => refs.text(3, el)}
+        className={`mt-3 flex flex-col ${align}`}
+        style={{ opacity: 0, willChange: 'transform, opacity' }}
+      >
+        <span
+          className="font-mono text-[11px] tracking-[0.25em]"
+          style={{
+            color: '#FFE86A',
+            textShadow: '0 0 5px rgba(255,230,0,.35)',
+          }}
+        >
+          {member.meta[0]}
+        </span>
 
-  <span
-    className="crew-cursor mt-1 font-mono text-[11px] tracking-[0.25em]"
-    style={{
-      color: '#FFE86A',
-      textShadow: '0 0 5px rgba(255,230,0,.35)',
-    }}
-  >
-    {member.meta[1]}
-  </span>
+        <span
+          className="crew-cursor mt-1 font-mono text-[11px] tracking-[0.25em]"
+          style={{
+            color: '#FFE86A',
+            textShadow: '0 0 5px rgba(255,230,0,.35)',
+          }}
+        >
+          {member.meta[1]}
+        </span>
 
-  <div className="crew-divider mt-4 w-32" />
-</div>
+        <div className="crew-divider mt-4 w-32" />
+      </div>
       <h3
-        ref={(el) => { nameElRef.current = el; refs.text(2, el); }}
-        data-final-name={member.name}
+        ref={(el) => refs.text(2, el)}
         className={`crew-name mt-4 font-display font-black leading-[0.92] tracking-tight ${
           isFinal ? 'text-[clamp(3.2rem,9vw,6.5rem)]' : 'text-[clamp(2.6rem,6.5vw,5rem)]'
-        }`
-      }
+        }`}
         style={{ opacity: 0, willChange: 'transform, opacity' }}
       >
         {member.name}
@@ -234,12 +220,11 @@ transform: `translateZ(${-START_Z - index * SPACING}px)`,
   );
 
   return (
-    <div ref={(el) => { sceneRootRef.current = el; refs.scene(el); }} style={sceneStyle}>
+    <div ref={(el) => refs.scene(el)} style={sceneStyle}>
       {isFinal ? (
         <div
           className="absolute inset-0 flex flex-col items-center justify-center gap-6 px-6 md:gap-12"
           style={{ transform: 'translateY(-70px)', pointerEvents: 'auto' }}
-          onMouseEnter={handleHover}
         >
           <div style={{ width: 'min(560px,54vw)' }}>{portrait}</div>
           {textBlock}
@@ -248,7 +233,6 @@ transform: `translateZ(${-START_Z - index * SPACING}px)`,
         <div
           className="absolute inset-0 flex items-center justify-center px-6"
           style={{ pointerEvents: 'auto' }}
-          onMouseEnter={handleHover}
         >
           <div
             className="flex items-center gap-6 md:gap-12"
@@ -276,12 +260,11 @@ transform: `translateZ(${-START_Z - index * SPACING}px)`,
 
 // One-shot decode scramble: characters briefly resolve from random symbols
 // into the final text, like an encrypted record decrypting. Fires once per
-// element, never replays while the record stays visible.
+// element per visibility pass; replays when the scene re-enters the window.
 const SCRAMBLE_CHARS = '#@%/_=01*<>$';
 
 // Tracks the in-flight decode RAF per element so we never accidentally run
-// two decode loops on the same element (the dataset.decoded guard in
-// revealText already prevents this, but the WeakMap is a hard guarantee).
+// two decode loops on the same element.
 const decodeRafs = new WeakMap<HTMLElement, number>();
 function startDecode(el: HTMLElement) {
   const prev = decodeRafs.get(el);
@@ -311,74 +294,25 @@ function startDecode(el: HTMLElement) {
   decodeRafs.set(el, requestAnimationFrame(step));
 }
 
-// Hover-triggered synchronized glitch: the whole crew record (card, image,
-// name) shakes together while the entire name decodes left→right through
-// random futuristic characters. ~780–900ms. Cannot retrigger while playing;
-// replays on every fresh mouseenter. Preserves original letter casing.
-const HOVER_DECODE_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789#$%&@!?+=<>[]{}/*';
-// Same pattern as decodeRafs — guarantees one glitch RAF per name element.
-const glitchRafs = new WeakMap<HTMLElement, number>();
-function triggerCrewGlitch(sceneEl: HTMLElement, nameEl: HTMLElement) {
-  if (nameEl.dataset.decoding === '1') return;
-  nameEl.dataset.decoding = '1';
-  sceneEl.classList.add('crew-glitch');
-  nameEl.classList.add('crew-decoding');
-
-  const finalText = nameEl.dataset.finalName || nameEl.textContent || '';
-  const len = finalText.length;
-  if (!len) {
-    nameEl.dataset.decoding = '';
-    sceneEl.classList.remove('crew-glitch');
-    nameEl.classList.remove('crew-decoding');
-    return;
+// Cancel any in-flight decode and restore the element's original text so a
+// scene that leaves mid-decode doesn't stay scrambled.
+function cancelDecode(el: HTMLElement) {
+  const raf = decodeRafs.get(el);
+  if (raf) {
+    cancelAnimationFrame(raf);
+    decodeRafs.delete(el);
   }
-
-  const totalDuration = 780 + Math.random() * 120; // 780–900ms
-  const glitchPhase = 90 + Math.random() * 30;    // 90–120ms RGB glitch
-  const startTs = performance.now();
-
-  const step = (now: number) => {
-    const elapsed = now - startTs;
-
-    if (elapsed >= totalDuration) {
-      nameEl.textContent = finalText;
-      sceneEl.classList.remove('crew-glitch');
-      nameEl.classList.remove('crew-decoding');
-      nameEl.classList.add('crew-fadeout');
-      glitchRafs.delete(nameEl);
-      window.setTimeout(() => {
-        nameEl.classList.remove('crew-fadeout');
-        nameEl.dataset.decoding = '';
-      }, 350);
-      return;
-    }
-
-    let resolved: number;
-    if (elapsed < glitchPhase) {
-      resolved = 0;
-    } else {
-      const decodeT = (elapsed - glitchPhase) / (totalDuration - glitchPhase);
-      resolved = Math.floor(decodeT * len);
-    }
-
-    let out = '';
-    for (let i = 0; i < len; i++) {
-      const ch = finalText[i];
-      if (ch === ' ' || i < resolved) {
-        out += ch;
-      } else {
-        out += HOVER_DECODE_CHARS[(Math.random() * HOVER_DECODE_CHARS.length) | 0];
-      }
-    }
-    nameEl.textContent = out;
-    glitchRafs.set(nameEl, requestAnimationFrame(step));
-  };
-  glitchRafs.set(nameEl, requestAnimationFrame(step));
+  if (el.dataset.originalText !== undefined) {
+    el.textContent = el.dataset.originalText;
+  }
+  el.dataset.decoded = '';
 }
 
 // Progressive text reveal: FILE → CODENAME → NAME (timing unchanged).
 // Slots 0–2 are the decoded labels; slot 3 (metadata + divider) rides the
 // codename's timing, slot 4 (status LED) rides the FILE label's timing.
+// Reveal depends only on the current visibility parameter f — no progression
+// is cached. Individual DOM writes are cached to avoid redundant style mutations.
 function revealText(els: (HTMLElement | null)[], f: number, cache: SceneCache) {
   const fe = easeInOutCubic(clamp01(f));
   for (let j = 0; j < 3; j++) {
@@ -396,6 +330,7 @@ function revealText(els: (HTMLElement | null)[], f: number, cache: SceneCache) {
       cache.textTransform[j] = tf;
     }
     if (op > 0.04 && !el.dataset.decoded) {
+      if (el.dataset.originalText === undefined) el.dataset.originalText = el.textContent ?? '';
       el.dataset.decoded = '1';
       startDecode(el);
     }
@@ -424,6 +359,36 @@ function revealText(els: (HTMLElement | null)[], f: number, cache: SceneCache) {
   }
 }
 
+// Restore a scene to its hidden resting state when it leaves the active window.
+// Ensures no stale cached values remain and the scene behaves like a fresh
+// render when it re-enters.
+function resetScene(
+  scene: HTMLDivElement,
+  bg: HTMLDivElement | null,
+  textEls: (HTMLElement | null)[],
+  cache: SceneCache,
+  index: number,
+) {
+  const restingZ = -START_Z - index * SPACING;
+  const tf = `translateZ(${restingZ}px)`;
+  scene.style.transform = tf;
+  scene.style.opacity = '0';
+  if (bg) bg.style.opacity = '0';
+
+  for (const el of textEls) {
+    if (!el) continue;
+    el.style.opacity = '0';
+    el.style.transform = '';
+    cancelDecode(el);
+  }
+
+  cache.transform = tf;
+  cache.opacity = '0';
+  cache.bgOpacity = '0';
+  cache.textOpacity = [];
+  cache.textTransform = [];
+}
+
 function useCrewEngine(
   sectionRef: React.RefObject<HTMLElement | null>,
   sceneRefs: React.RefObject<(HTMLDivElement | null)[]>,
@@ -431,6 +396,7 @@ function useCrewEngine(
   textRefs: React.RefObject<(HTMLElement | null)[][]>,
 ) {
   const cacheRef = useRef<(SceneCache | null)[]>([]);
+  const activeRef = useRef<Set<number>>(new Set());
 
   // The camera target is driven by ScrollTrigger progress (which Lenis feeds).
   // The controller eases toward that target with momentum — a tiny cinematic
@@ -445,14 +411,28 @@ function useCrewEngine(
       const caches = cacheRef.current;
       if (!scenes || !bgs || !texts) return;
 
-      // Active-scene windowing: only update current ± 1. All other scenes are
-      // frozen at their last-written values (always opacity 0 when they left
-      // the window, so they stay invisible). This covers every scene whose
-      // depthOpacity is > 0, so visuals are identical.
+      // Active-scene windowing: only update current ± WINDOW_RADIUS. Scenes
+      // outside this window are frozen at their hidden resting state.
       const current = Math.round((offset - START_Z) / SPACING);
-      const lo = Math.max(0, current - 1);
-      const hi = Math.min(COUNT - 1, current + 1);
+      const lo = Math.max(0, current - WINDOW_RADIUS);
+      const hi = Math.min(COUNT - 1, current + WINDOW_RADIUS);
 
+      // Build the new active set and reset any scene that left the window.
+      const newActive = new Set<number>();
+      for (let i = lo; i <= hi; i++) newActive.add(i);
+
+      for (const i of activeRef.current) {
+        if (!newActive.has(i)) {
+          const scene = scenes[i];
+          if (!scene) continue;
+          let cache = caches[i];
+          if (!cache) { cache = makeCache(); caches[i] = cache; }
+          resetScene(scene, bgs[i], texts[i] ?? [], cache, i);
+        }
+      }
+      activeRef.current = newActive;
+
+      // Update all active scenes.
       for (let i = lo; i <= hi; i++) {
         const scene = scenes[i];
         if (!scene) continue;
@@ -485,23 +465,19 @@ function useCrewEngine(
           }
         }
 
-        // Throttled reveal: skip revealText entirely when the reveal
-        // parameter hasn't moved enough to produce a visible change.
+        // Reveal: always recompute from current visibility. No progression
+        // caching — the write cache inside revealText prevents redundant DOM
+        // mutations while allowing full recovery on re-entry.
         let f: number;
         if (i === DAVID_INDEX) {
           // David reveals only during the dwell (after reaching camera).
-          // Progress is reconstructed from the realized camera offset so the
-          // text reveal inherits the same physical momentum.
           const p = offset / CAMERA_TRAVEL;
           f = (p - P_CAMERA) / DAVID_DWELL;
         } else {
           // Others reveal as they approach the camera.
           f = (z + REVEAL_START) / REVEAL_START;
         }
-        if (Math.abs(f - cache.revealF) >= REVEAL_THRESHOLD) {
-          cache.revealF = f;
-          revealText(texts[i] ?? [], f, cache);
-        }
+        revealText(texts[i] ?? [], f, cache);
       }
     },
   );
@@ -525,7 +501,7 @@ export default function CrewDatabase() {
       <CrewFXStyles />
 
       {/* Scroll runway */}
- <div style={{ height: '600vh', position: 'relative' }}>
+      <div style={{ height: '600vh', position: 'relative' }}>
         {/* Pinned viewport */}
         <div
           style={{
@@ -692,64 +668,7 @@ function CrewFXStyles() {
   color: transparent;
   filter: drop-shadow(0 0 8px rgba(0,240,255,0.28));
   animation: crewNameFlow 16s linear infinite;
-  transition: filter 0.35s ease-out;
   position: relative;
-}
-.crew-name.crew-decoding {
-  filter: drop-shadow(1px 0 rgba(255,0,168,0.5)) drop-shadow(-1px 0 rgba(0,240,255,0.5)) drop-shadow(0 0 14px rgba(0,240,255,0.6)) drop-shadow(0 0 22px rgba(255,0,168,0.25)) brightness(1.2);
-}
-.crew-name.crew-decoding::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(90deg, transparent 0%, rgba(0,240,255,0.3) 50%, transparent 100%);
-  background-size: 200% 100%;
-  animation: crewNameSweep 0.85s ease-out forwards;
-  pointer-events: none;
-  mix-blend-mode: screen;
-}
-.crew-name.crew-decoding::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: repeating-linear-gradient(0deg, transparent 0, transparent 2px, rgba(0,240,255,0.06) 2px, rgba(0,240,255,0.06) 3px);
-  animation: crewNameScanFade 0.85s ease-out forwards;
-  pointer-events: none;
-}
-.crew-name.crew-fadeout {
-  filter: drop-shadow(0 0 8px rgba(0,240,255,0.28));
-}
-@keyframes crewNameSweep {
-  0% { background-position: -100% 0; }
-  100% { background-position: 100% 0; }
-}
-@keyframes crewNameScanFade {
-  0% { opacity: 0.7; }
-  100% { opacity: 0; }
-}
-
-/* ── Synchronized crew glitch (hover) ── */
-@keyframes crewWellGlitch {
-  0%,100% { filter: none; }
-  10% { filter: drop-shadow(2px 0 rgba(255,0,60,0.55)) drop-shadow(-2px 0 rgba(0,240,255,0.55)); }
-  25% { filter: drop-shadow(-1.5px 0 rgba(255,0,60,0.4)) drop-shadow(1.5px 0 rgba(0,240,255,0.4)); }
-  40% { filter: drop-shadow(2px 0 rgba(255,0,168,0.45)) drop-shadow(-2px 0 rgba(0,240,255,0.45)); }
-  55% { filter: drop-shadow(-1px 0 rgba(255,0,60,0.3)) drop-shadow(1px 0 rgba(0,240,255,0.3)); }
-  70% { filter: drop-shadow(0.5px 0 rgba(255,0,60,0.15)) drop-shadow(-0.5px 0 rgba(0,240,255,0.15)); }
-  85% { filter: none; }
-}
-/* Không rung card */
-.crew-glitch .crew-card {
-}
-
-/* Giữ RGB glitch của ảnh */
-.crew-glitch .crew-card-well {
-  animation: crewWellGlitch 0.85s ease-out forwards;
-}
-
-/* Chỉ giữ gradient chạy */
-.crew-glitch .crew-name {
-  animation: crewNameFlow 16s linear infinite;
 }
 .crew-divider {
   position: relative;
