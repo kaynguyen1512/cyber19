@@ -254,8 +254,18 @@ const aboutGlitchStyles = `
 .ab-scan-grade {
   position: absolute;
   inset: 0;
-  backdrop-filter: brightness(1.25) contrast(1.4) saturate(1.6);
-  -webkit-backdrop-filter: brightness(1.25) contrast(1.4) saturate(1.6);
+
+  backdrop-filter:
+    brightness(1.35)
+    contrast(1.7)
+    saturate(2.1)
+    hue-rotate(-4deg);
+
+  -webkit-backdrop-filter:
+    brightness(1.35)
+    contrast(1.7)
+    saturate(2.1)
+    hue-rotate(-4deg);
 }
 
 /* RGB split — two tinted backdrop layers offset left (cyan) / right (magenta). */
