@@ -33,14 +33,15 @@ const COUNT = CREW.length;          // 7
 const DAVID_INDEX = COUNT - 1;      // 6
 
 /* ═══════════════════════════════════════════════════════════════════
-   DEPTH SYSTEM — evenly spaced translateZ, real perspective
+   DEPTH SYSTEM — evenly spaced, simulated with translateY + scale + opacity
+   (no real perspective / translateZ, to avoid per-frame matrix recomputation)
    ═══════════════════════════════════════════════════════════════════ */
 const START_Z = 650;
-const SPACING = 1500;               // px between characters (translateZ)
-const PERSPECTIVE = 1000;           // parent perspective px
+const SPACING = 1500;               // px between characters (depth spacing)
 const CAMERA_TRAVEL = COUNT * SPACING; // 7000 — full camera travel
+const TY_MAX = 180;                 // max translateY for far scenes (px)
 
-// Visibility windows measured in rendered-z (px from camera)
+// Visibility windows measured in depth (px from camera)
 const FADE_IN = 1900;                // begins fading in this far before camera
 const HOLD = 200;                   // fully visible band around camera
 const FADE_OUT = 1400;               // fades out this far past camera
@@ -51,19 +52,26 @@ const P_CAMERA = 0.8;               // camera reaches David at this progress
 const DAVID_DWELL = 0.1;            // David's reveal window after reaching camera
 
 // Active window radius — scenes within current ± WINDOW_RADIUS receive updates.
-const WINDOW_RADIUS = 2;
+const WINDOW_RADIUS = 1;
 
-// Per-scene DOM write cache. Tracks the last value written for each property
-// so we can skip style mutations that would not change anything. Reveal
-// progression itself is NEVER cached — only individual DOM writes.
+// Epsilon thresholds for skipping redundant DOM writes.
+const OP_EPS = 0.004;
+const PX_EPS = 0.02;
+const SCALE_EPS = 0.0005;
+
+// Per-scene DOM write cache (numeric). Tracks last written values so we skip
+// style mutations that wouldn't change anything visibly. `settled` tracks the
+// reveal state: -1 transitioning, 0 hidden, 1 visible.
 interface SceneCache {
-  transform: string;
-  opacity: string;
-  textOpacity: string[]; // per-slot last opacity
-  textTransform: string[]; // per-slot last transform
+  ty: number;
+  scale: number;
+  opacity: number;
+  settled: number;
+  textOpacity: number[]; // per-slot last opacity
+  textTfY: number[];     // per-slot last translateY (px)
 }
 function makeCache(): SceneCache {
-  return { transform: '', opacity: '', textOpacity: [], textTransform: [] };
+  return { ty: NaN, scale: NaN, opacity: NaN, settled: -1, textOpacity: [], textTfY: [] };
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -82,6 +90,25 @@ const depthOpacity = (z: number): number => {
   if (z <= HOLD) return 1;
   if (z < HOLD + FADE_OUT) return 1 - (z - HOLD) / FADE_OUT;
   return 0;
+};
+
+// Simulated depth → lightweight 2D transform. Far scenes sit below center,
+// small; they rise and grow as they approach the camera, then shrink upward
+// after passing. No perspective matrix, no translateZ.
+const depthTransform = (z: number): { ty: number; scale: number; opacity: number } => {
+  const opacity = depthOpacity(z);
+  let scale: number;
+  let ty: number;
+  if (z < 0) {
+    const t = clamp01((z + FADE_IN) / FADE_IN);
+    scale = 0.55 + 0.45 * t;
+    ty = (1 - t) * TY_MAX;
+  } else {
+    const t = clamp01(z / FADE_OUT);
+    scale = 1 - 0.45 * t;
+    ty = -t * TY_MAX;
+  }
+  return { ty, scale, opacity };
 };
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -121,14 +148,14 @@ function CrewScene({ member, index, refs }: { member: CrewMember; index: number;
   const isFinal = member.side === 'center';
   const isLeft = member.side === 'left';
 
+  const resting = depthTransform(-START_Z - index * SPACING);
   const sceneStyle: CSSProperties = {
     position: 'absolute',
     top: 0,
     left: 0,
     width: '100%',
     height: '100%',
-    transformStyle: 'preserve-3d',
-    transform: `translateZ(${-START_Z - index * SPACING}px)`,
+    transform: `translateY(${resting.ty}px) scale(${resting.scale})`,
     opacity: 0,
     pointerEvents: 'none',
     willChange: 'transform, opacity',
@@ -310,23 +337,52 @@ function cancelDecode(el: HTMLElement) {
 // Progressive text reveal: FILE → CODENAME → NAME (timing unchanged).
 // Slots 0–2 are the decoded labels; slot 3 (metadata + divider) rides the
 // codename's timing, slot 4 (status LED) rides the FILE label's timing.
-// Reveal depends only on the current visibility parameter f — no progression
-// is cached. Individual DOM writes are cached to avoid redundant style mutations.
+// Only runs while a scene is actively transitioning (0 < f < 1). Once settled
+// hidden (f ≤ 0) or visible (f ≥ 1), the function returns immediately after
+// ensuring the DOM matches the settled state — no per-frame work.
 function revealText(els: (HTMLElement | null)[], f: number, cache: SceneCache) {
-  const fe = easeInOutCubic(clamp01(f));
+  // Settled hidden: ensure everything is hidden once, then bail.
+  if (f <= 0) {
+    if (cache.settled !== 0) {
+      for (let j = 0; j < 5; j++) {
+        const el = els[j];
+        if (!el) continue;
+        if (cache.textOpacity[j] !== 0) { el.style.opacity = '0'; cache.textOpacity[j] = 0; }
+        if (j < 4 && cache.textTfY[j] !== 12) { el.style.transform = 'translateY(12px)'; cache.textTfY[j] = 12; }
+        cancelDecode(el);
+      }
+      cache.settled = 0;
+    }
+    return;
+  }
+  // Settled visible: ensure everything is visible once, then bail.
+  if (f >= 1) {
+    if (cache.settled !== 1) {
+      for (let j = 0; j < 5; j++) {
+        const el = els[j];
+        if (!el) continue;
+        if (cache.textOpacity[j] !== 1) { el.style.opacity = '1'; cache.textOpacity[j] = 1; }
+        if (j < 4 && cache.textTfY[j] !== 0) { el.style.transform = ''; cache.textTfY[j] = 0; }
+      }
+      cache.settled = 1;
+    }
+    return;
+  }
+  cache.settled = -1;
+
+  const fe = easeInOutCubic(f);
   for (let j = 0; j < 3; j++) {
     const el = els[j];
     if (!el) continue;
     const op = clamp01((fe - j * 0.33) / 0.33);
-    const opStr = String(op);
-    if (opStr !== cache.textOpacity[j]) {
-      el.style.opacity = opStr;
-      cache.textOpacity[j] = opStr;
+    if (Math.abs(op - cache.textOpacity[j]) >= OP_EPS) {
+      el.style.opacity = String(op);
+      cache.textOpacity[j] = op;
     }
-    const tf = `translateY(${(1 - op) * 12}px)`;
-    if (tf !== cache.textTransform[j]) {
-      el.style.transform = tf;
-      cache.textTransform[j] = tf;
+    const ty = (1 - op) * 12;
+    if (Math.abs(ty - cache.textTfY[j]) >= PX_EPS) {
+      el.style.transform = `translateY(${ty}px)`;
+      cache.textTfY[j] = ty;
     }
     if (op > 0.04 && !el.dataset.decoded) {
       if (el.dataset.originalText === undefined) el.dataset.originalText = el.textContent ?? '';
@@ -337,52 +393,51 @@ function revealText(els: (HTMLElement | null)[], f: number, cache: SceneCache) {
   const meta = els[3];
   if (meta) {
     const op = clamp01((fe - 0.33) / 0.33);
-    const opStr = String(op);
-    if (opStr !== cache.textOpacity[3]) {
-      meta.style.opacity = opStr;
-      cache.textOpacity[3] = opStr;
+    if (Math.abs(op - cache.textOpacity[3]) >= OP_EPS) {
+      meta.style.opacity = String(op);
+      cache.textOpacity[3] = op;
     }
-    const tf = `translateY(${(1 - op) * 12}px)`;
-    if (tf !== cache.textTransform[3]) {
-      meta.style.transform = tf;
-      cache.textTransform[3] = tf;
+    const ty = (1 - op) * 12;
+    if (Math.abs(ty - cache.textTfY[3]) >= PX_EPS) {
+      meta.style.transform = `translateY(${ty}px)`;
+      cache.textTfY[3] = ty;
     }
   }
   const led = els[4];
   if (led) {
-    const opStr = String(clamp01(fe));
-    if (opStr !== cache.textOpacity[4]) {
-      led.style.opacity = opStr;
-      cache.textOpacity[4] = opStr;
+    const op = clamp01(fe);
+    if (Math.abs(op - cache.textOpacity[4]) >= OP_EPS) {
+      led.style.opacity = String(op);
+      cache.textOpacity[4] = op;
     }
   }
 }
 
 // Restore a scene to its hidden resting state when it leaves the active window.
-// Ensures no stale cached values remain and the scene behaves like a fresh
-// render when it re-enters.
 function resetScene(
   scene: HTMLDivElement,
   textEls: (HTMLElement | null)[],
   cache: SceneCache,
   index: number,
 ) {
-  const restingZ = -START_Z - index * SPACING;
-  const tf = `translateZ(${restingZ}px)`;
-  scene.style.transform = tf;
+  const resting = depthTransform(-START_Z - index * SPACING);
+  scene.style.transform = `translateY(${resting.ty}px) scale(${resting.scale})`;
   scene.style.opacity = '0';
 
-  for (const el of textEls) {
+  for (let j = 0; j < textEls.length; j++) {
+    const el = textEls[j];
     if (!el) continue;
     el.style.opacity = '0';
-    el.style.transform = '';
+    if (j < 4) el.style.transform = 'translateY(12px)';
     cancelDecode(el);
   }
 
-  cache.transform = tf;
-  cache.opacity = '0';
-  cache.textOpacity = [];
-  cache.textTransform = [];
+  cache.ty = resting.ty;
+  cache.scale = resting.scale;
+  cache.opacity = 0;
+  cache.settled = 0;
+  cache.textOpacity = [0, 0, 0, 0, 0];
+  cache.textTfY = [12, 12, 12, 12, 0];
 }
 
 function useCrewEngine(
@@ -393,9 +448,8 @@ function useCrewEngine(
   const cacheRef = useRef<(SceneCache | null)[]>([]);
   const activeRef = useRef<Set<number>>(new Set());
 
-  // The camera target is driven by ScrollTrigger progress (which Lenis feeds).
-  // The controller eases toward that target with momentum — a tiny cinematic
-  // glide after the wheel stops, no overshoot, no bounce.
+  // Direct pipeline: wheel → Lenis → ScrollTrigger progress → camera offset
+  // → scene transforms. No physics, no RAF, no second interpolation layer.
   useCameraScroll(
     sectionRef,
     (p) => (p < P_CAMERA ? (p / P_CAMERA) * CAMERA_TRAVEL : CAMERA_TRAVEL),
@@ -405,13 +459,11 @@ function useCrewEngine(
       const caches = cacheRef.current;
       if (!scenes || !texts) return;
 
-      // Active-scene windowing: only update current ± WINDOW_RADIUS. Scenes
-      // outside this window are frozen at their hidden resting state.
+      // Active-scene windowing: only update current ± 1 (three scenes).
       const current = Math.round((offset - START_Z) / SPACING);
       const lo = Math.max(0, current - WINDOW_RADIUS);
       const hi = Math.min(COUNT - 1, current + WINDOW_RADIUS);
 
-      // Build the new active set and reset any scene that left the window.
       const newActive = new Set<number>();
       for (let i = lo; i <= hi; i++) newActive.add(i);
 
@@ -426,7 +478,6 @@ function useCrewEngine(
       }
       activeRef.current = newActive;
 
-      // Update all active scenes.
       for (let i = lo; i <= hi; i++) {
         const scene = scenes[i];
         if (!scene) continue;
@@ -435,31 +486,24 @@ function useCrewEngine(
         if (!cache) { cache = makeCache(); caches[i] = cache; }
 
         const z = -START_Z - i * SPACING + offset;
-        const op = depthOpacity(z);
+        const { ty, scale, opacity: op } = depthTransform(z);
 
-        // Cached transform + opacity — only write when the value actually
-        // changes. No layout recalculation, just style mutation.
-        const tf = `translateZ(${z}px)`;
-        if (tf !== cache.transform) {
-          scene.style.transform = tf;
-          cache.transform = tf;
+        // Only write when numeric values actually change beyond epsilon.
+        if (Math.abs(ty - cache.ty) >= PX_EPS || Math.abs(scale - cache.scale) >= SCALE_EPS) {
+          scene.style.transform = `translateY(${ty}px) scale(${scale})`;
+          cache.ty = ty;
+          cache.scale = scale;
         }
-        const opStr = String(op);
-        if (opStr !== cache.opacity) {
-          scene.style.opacity = opStr;
-          cache.opacity = opStr;
+        if (Math.abs(op - cache.opacity) >= OP_EPS) {
+          scene.style.opacity = String(op);
+          cache.opacity = op;
         }
 
-        // Reveal: always recompute from current visibility. No progression
-        // caching — the write cache inside revealText prevents redundant DOM
-        // mutations while allowing full recovery on re-entry.
         let f: number;
         if (i === DAVID_INDEX) {
-          // David reveals only during the dwell (after reaching camera).
           const p = offset / CAMERA_TRAVEL;
           f = (p - P_CAMERA) / DAVID_DWELL;
         } else {
-          // Others reveal as they approach the camera.
           f = (z + REVEAL_START) / REVEAL_START;
         }
         revealText(texts[i] ?? [], f, cache);
@@ -521,13 +565,11 @@ export default function CrewDatabase() {
             />
           </div>
 
-          {/* Foreground 3D scene */}
+          {/* Foreground scene */}
           <div
             className="absolute inset-0"
             style={{
-              perspective: `${PERSPECTIVE}px`,
-              transformStyle: 'preserve-3d',
-              overflow: 'visible',
+              overflow: 'hidden',
               zIndex: 1,
             }}
           >
