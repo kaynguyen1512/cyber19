@@ -58,27 +58,6 @@ export default function About() {
       </div>
 
       {/* ── CRT signal-scanner glitch overlay (no DOM clone) ── */}
-      <svg className="ab-svg" aria-hidden focusable="false">
-        <defs>
-          <filter id="ab-disp" x="0%" y="0%" width="100%" height="100%">
-            <feTurbulence
-              type="fractalNoise"
-              baseFrequency="0.02 0.6"
-              numOctaves="2"
-              seed="7"
-              result="noise"
-            />
-            <feDisplacementMap
-              ref={dispMapRef}
-              in="SourceGraphic"
-              in2="noise"
-              scale="0"
-              xChannelSelector="R"
-              yChannelSelector="G"
-            />
-          </filter>
-        </defs>
-      </svg>
 
       <div ref={scanRef} className="ab-scan" aria-hidden>
         {/* Contrast / brightness / saturation boost on real pixels */}
