@@ -2,130 +2,139 @@ import { useEffect } from 'react';
 import gsap from 'gsap';
 
 /**
- * About section — premium "signal scanner" glitch.
+ * About section — CRT "signal scanner" glitch (no DOM cloning).
  *
- * A single horizontal band (≈22px, soft falloff) travels top→bottom through
- * the section at constant speed over 4–6s. Only the pixels inside the moving
- * band are corrupted: the real content is cloned into an overlay layer that
- * is revealed exclusively through a moving clip-path slice. The clone carries
- * RGB-split drop-shadows, a horizontal tearing jitter, a brightness lift and
- * a faint noise texture — so the glitch exists ONLY inside the band.
+ * A single horizontal band (~24px, soft falloff) travels top→bottom at
+ * constant speed over ~5s, waits 8–12s, repeats. The band is NOT a clone of
+ * the content — it is a thin overlay whose children use `backdrop-filter` to
+ * sample and corrupt the REAL pixels behind them. Only the pixels under the
+ * moving band are affected; everything else is untouched.
  *
- * Everything outside the band is untouched. No React re-renders; only
- * transform / opacity / clip-path / filter are animated. GPU-friendly.
+ * Inside the band:
+ *  - backdrop contrast / brightness / saturation boost
+ *  - RGB split (cyan left, magenta right, ±8px) via tinted backdrop layers
+ *  - horizontal tearing strips (1–4px, random 6–18px shifts)
+ *  - fractal-noise overlay displaced by an SVG feTurbulence+feDisplacementMap
+ *    whose scale animates 0 → strong → 0 only during a sweep
+ *  - occasional 20–40ms white interference flash
+ *
+ * GSAP handles movement / timing / opacity / displacement scale only.
+ * No React re-renders. Only transform / opacity / filter / SVG attrs animate.
  */
 export function useAboutGlitchSweep(
   sectionRef: React.RefObject<HTMLElement | null>,
-  cloneRef: React.RefObject<HTMLDivElement | null>,
-  contentRef: React.RefObject<HTMLDivElement | null>,
+  scanRef: React.RefObject<HTMLDivElement | null>,
+  stripsRef: React.RefObject<HTMLDivElement | null>,
+  flashRef: React.RefObject<HTMLDivElement | null>,
+  dispMapRef: React.RefObject<SVGElement | null>,
 ) {
   useEffect(() => {
     const section = sectionRef.current;
-    const clone = cloneRef.current;
-    const content = contentRef.current;
-    if (!section || !clone || !content) return;
+    const scan = scanRef.current;
+    const strips = stripsRef.current;
+    const flash = flashRef.current;
+    const dispMap = dispMapRef.current as unknown as
+      | SVGFEDisplacementMapElement
+      | null;
+    if (!section || !scan || !strips || !flash || !dispMap) return;
 
     const reduce = window.matchMedia(
       '(prefers-reduced-motion: reduce)',
     ).matches;
-    if (reduce) return;
+    if (reduce) {
+      gsap.set(scan, { opacity: 0 });
+      return;
+    }
 
-    // --- Build the duplicated layer once -----------------------------------
-    const copy = content.cloneNode(true) as HTMLElement;
-    copy.removeAttribute('id');
-    copy.querySelectorAll('[id]').forEach((el) => el.removeAttribute('id'));
-    // Neutralise interactive/parallax bits in the clone so it stays aligned.
-    copy.querySelectorAll('video').forEach((v) => {
-      const vid = v as HTMLVideoElement;
-      vid.muted = true;
-      vid.preload = 'auto';
-      try {
-        vid.currentTime = 0;
-      } catch {
-        /* ignore */
-      }
-    });
-
-    const inner = document.createElement('div');
-    inner.className = 'ab-clone-inner';
-    inner.appendChild(copy);
-
-    const fx = document.createElement('div');
-    fx.className = 'ab-clone-fx';
-
-    const noise = document.createElement('div');
-    noise.className = 'ab-clone-noise';
-
-    clone.appendChild(inner);
-    clone.appendChild(fx);
-    clone.appendChild(noise);
-
-    const BAND = 22; // px — within the 18–26 spec
+    const BAND = 24;
     const rnd = (a: number, b: number) => a + Math.random() * (b - a);
     let killed = false;
 
+    // --- Lay out the tearing strips once (random heights/positions) --------
+    const stripEls = Array.from(
+      strips.children,
+    ) as HTMLElement[];
+    stripEls.forEach((el) => {
+      const h = rnd(1, 4);
+      el.style.height = `${h}px`;
+      el.style.top = `${rnd(0, BAND - h)}px`;
+      el.style.transform = 'translateX(0px)';
+    });
+
     // --- One sweep ---------------------------------------------------------
+    let lastTick = 0;
+    let flashed = false;
+
     const sweep = () => {
       if (killed) return;
       const H = section.offsetHeight;
-      const dur = rnd(4, 6);
 
-      const proxy = { y: -BAND };
-      gsap.set(clone, { opacity: 0 });
-      clone.style.clipPath = `inset(0px 0 ${H}px 0)`;
-      fx.style.transform = `translateY(${-BAND}px)`;
+      gsap.set(scan, { y: -BAND, opacity: 0 });
+      gsap.set(flash, { opacity: 0 });
+      dispMap.setAttribute('scale', '0');
+      flashed = false;
+
+      const dispProxy = { scale: 0 };
+      const setDisp = () =>
+        dispMap.setAttribute('scale', dispProxy.scale.toFixed(1));
+
+      const tick = () => {
+        const now = performance.now();
+        if (now - lastTick < 70) return;
+        lastTick = now;
+        // Random horizontal tearing — each strip shifts independently.
+        for (const el of stripEls) {
+          el.style.transform = `translateX(${rnd(-18, 18).toFixed(1)}px)`;
+        }
+        // Occasional tiny white interference flash, only mid-sweep.
+        const progress = (gsap.getProperty(scan, 'y') as number) / H;
+        if (
+          !flashed &&
+          progress > 0.25 &&
+          progress < 0.75 &&
+          Math.random() < 0.04
+        ) {
+          flashed = true;
+          flash.style.opacity = '1';
+          window.setTimeout(() => {
+            if (!killed) flash.style.opacity = '0';
+          }, rnd(20, 40));
+        }
+      };
 
       const tl = gsap.timeline({
         onComplete: () => {
           if (killed) return;
-          gsap.delayedCall(rnd(8, 15), sweep);
+          gsap.delayedCall(rnd(8, 12), sweep);
         },
       });
 
-      tl.to(clone, { opacity: 1, duration: 0.45, ease: 'power2.out' })
+      tl.to(scan, { opacity: 1, duration: 0.4, ease: 'power2.out' })
         .to(
-          proxy,
-          {
-            y: H,
-            duration: dur,
-            ease: 'none',
-            onUpdate: () => {
-              const y = proxy.y;
-              const top = Math.max(0, y);
-              const bottom = Math.max(0, H - y - BAND);
-              clone.style.clipPath = `inset(${top}px 0 ${bottom}px 0)`;
-              fx.style.transform = `translateY(${y}px)`;
-            },
-          },
+          scan,
+          { y: H, duration: 5, ease: 'none', onUpdate: tick },
           '<',
         )
-        // Horizontal tearing jitter — tiny random offsets throughout the sweep.
+        .to(scan, { opacity: 0, duration: 0.4, ease: 'power2.in' }, '-=0.4')
+        // SVG displacement scale: 0 → strong (horizontal) → 0, only during sweep.
         .to(
-          inner,
-          {
-            x: 'random(-4,4)',
-            duration: 0.07,
-            repeat: Math.floor(dur / 0.07),
-            repeatRefresh: true,
-            ease: 'none',
-          },
+          dispProxy,
+          { scale: 45, duration: 0.15, ease: 'power2.out', onUpdate: setDisp },
           '<',
         )
         .to(
-          clone,
-          { opacity: 0, duration: 0.45, ease: 'power2.in' },
-          `-=${0.45}`,
+          dispProxy,
+          { scale: 0, duration: 0.45, ease: 'power2.in', onUpdate: setDisp },
+          '-=0.5',
         );
     };
 
-    gsap.delayedCall(rnd(8, 15), sweep);
+    gsap.delayedCall(rnd(2, 5), sweep);
 
     return () => {
       killed = true;
-      gsap.killTweensOf(clone);
-      gsap.killTweensOf(inner);
-      gsap.killTweensOf(fx);
-      clone.innerHTML = '';
+      gsap.killTweensOf(scan);
+      gsap.killTweensOf(flash);
     };
-  }, [sectionRef, cloneRef, contentRef]);
+  }, [sectionRef, scanRef, stripsRef, flashRef, dispMapRef]);
 }

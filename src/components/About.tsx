@@ -18,12 +18,20 @@ const MANIFESTO = [
 
 export default function About() {
   const sectionRef = useRef<HTMLElement>(null);
-  const contentRef = useRef<HTMLDivElement>(null);
-  const cloneRef = useRef<HTMLDivElement>(null);
+  const scanRef = useRef<HTMLDivElement>(null);
+  const stripsRef = useRef<HTMLDivElement>(null);
+  const flashRef = useRef<HTMLDivElement>(null);
+  const dispMapRef = useRef<SVGFEDisplacementMapElement>(null);
   const imgRef = useRef<HTMLDivElement>(null);
   const [offset, setOffset] = useState(0);
 
-  useAboutGlitchSweep(sectionRef, cloneRef, contentRef);
+  useAboutGlitchSweep(
+    sectionRef,
+    scanRef,
+    stripsRef,
+    flashRef,
+    dispMapRef as unknown as React.RefObject<SVGElement>,
+  );
 
   // Slow parallax on the artwork tied to the section's position in the viewport.
   useEffect(() => {
@@ -35,7 +43,6 @@ export default function About() {
         if (!el) return;
         const rect = el.getBoundingClientRect();
         const vh = window.innerHeight;
-        // Progress from 0 (section entering bottom) to 1 (section leaving top).
         const progress = (vh - rect.top) / (vh + rect.height);
         setOffset((progress - 0.5) * 80);
       });
@@ -62,10 +69,50 @@ export default function About() {
         <div className="absolute bottom-0 left-0 h-[30rem] w-[30rem] rounded-full bg-cyber-cyan/5 blur-[120px]" />
       </div>
 
-      {/* Glitch clone overlay — revealed only through a moving clip-path slice. */}
-      <div ref={cloneRef} className="ab-clone" aria-hidden />
+      {/* ── CRT signal-scanner glitch overlay (no DOM clone) ── */}
+      <svg className="ab-svg" aria-hidden focusable="false">
+        <defs>
+          <filter id="ab-disp" x="0%" y="0%" width="100%" height="100%">
+            <feTurbulence
+              type="fractalNoise"
+              baseFrequency="0.02 0.6"
+              numOctaves="2"
+              seed="7"
+              result="noise"
+            />
+            <feDisplacementMap
+              ref={dispMapRef}
+              in="SourceGraphic"
+              in2="noise"
+              scale="0"
+              xChannelSelector="R"
+              yChannelSelector="G"
+            />
+          </filter>
+        </defs>
+      </svg>
 
-      <div ref={contentRef} className="mx-auto max-w-6xl">
+      <div ref={scanRef} className="ab-scan" aria-hidden>
+        {/* Contrast / brightness / saturation boost on real pixels */}
+        <div className="ab-scan-grade" />
+        {/* RGB split — cyan shifted left, magenta shifted right */}
+        <div className="ab-scan-rgb ab-scan-cyan" />
+        <div className="ab-scan-rgb ab-scan-magenta" />
+        {/* Fractal-noise overlay, displaced by the SVG filter */}
+        <div className="ab-scan-noise" />
+        {/* Horizontal tearing strips — random independent shifts */}
+        <div ref={stripsRef} className="ab-scan-strips">
+          {Array.from({ length: 7 }).map((_, i) => (
+            <div key={i} className="ab-strip" />
+          ))}
+        </div>
+        {/* Occasional white interference flash */}
+        <div ref={flashRef} className="ab-scan-flash" />
+        {/* Soft scanline glow — rounded falloff, not neon */}
+        <div className="ab-scan-glow" />
+      </div>
+
+      <div className="mx-auto max-w-6xl">
         {/* Editorial two-column block */}
         <div className="grid items-center gap-16 lg:grid-cols-[55%_45%] lg:gap-20">
           {/* Text column */}
@@ -123,7 +170,7 @@ export default function About() {
   }}
 >
   <source
-    src="https://cdn-cf-east.streamable.com/video/mp4/jb3r6e.mp4?Expires=1785388763969&Key-Pair-Id=APKAIEYUVEN4EVB2OKEQ&Signature=kmjkNM8bYAwUIsNDD91HwOJm21irUplCaHg6At6S5EwQYVQTODz1jegZBiH2EseLMUSlGq-HYbGisJVfauPYwT3NudfMFXv6YoXo4gIvwrg~AJ9vCOLtuitjpeqZC2FIwvU0sReen8OuC8Zs5YTwyx4Obtad92jXQcXoTgbF5P5Sl2Q0dcXATVjOBNcDn4njjgCdLPSo2rkb9xmD83SdqRh7ngMcJJwN4nQyemSd7gais1BiJYHmERehCgpQMNcY28IYvrgtVbJLoZPdC-nrpQQYoSVk2eg2iGG7qke17NgrrCztbsN6iOGh4j0E5SOc4t7k9o6bDQDgqYxSrND~Rg__"
+    src="https://cdn-cf-east.streamable.com/video/mp4/jb3r6e.mp4?Expires=1785388763969&Key-Pair-Id=APKAIEYUVEN4EVB2OKEQ&Signature=kmjkNM8bYAwUIsNDD91HwOJm21irUplCaHg6At6S5EwQYVQTODz1jegZBiH2EseLMUSlGq-HYbGisJVfauPYwT3NudfMFXv6YoXo4gVwrg~AJ9vCOLtuitjpeqZC2FIwvU0sReen8OuC8Zs5YTwyx4Obtad92jXQcXoTgbF5P5Sl2Q0dcXATVjOBNcDn4njjgCdLPSo2rkb9xmD83SdqRh7ngMcJJwN4nQyemSd7gais1BiJYHmERehCgpQMNcY28IYvrgtVbJLoZPdC-nrpQQYoSVk2eg2iGG7qke17NgrrCztbsN6iOGh4j0E5SOc4t7k9o6bDQDgqYxSrND~Rg__"
     type="video/mp4"
   />
 </video>
@@ -164,65 +211,129 @@ export default function About() {
 }
 
 /* ═══════════════════════════════════════════════════════════════════
-   SIGNAL SCANNER GLITCH — About section only.
-   A single horizontal band travels top→bottom at constant speed. The real
-   section content is cloned into .ab-clone, revealed only through a moving
-   clip-path slice. Inside that slice the clone carries RGB-split drop-shadows,
-   a horizontal tearing jitter, a brightness lift and faint noise — so the
-   glitch exists ONLY inside the moving band. Everything else is untouched.
-   Movement/timing/opacity via GSAP; clip-path/transform/filter via CSS.
+   CRT SIGNAL SCANNER — About section only, no DOM clone.
+   A thin overlay (.ab-scan) travels top→bottom. Its children sample the
+   REAL pixels behind them via backdrop-filter, so only the pixels under
+   the moving band are corrupted. The SVG feTurbulence+feDisplacementMap
+   drives the horizontal tearing; its scale animates only during a sweep.
    ═══════════════════════════════════════════════════════════════════ */
 
 const aboutGlitchStyles = `
-.ab-clone {
+.ab-svg {
   position: absolute;
-  inset: 0;
-  z-index: 20;
+  width: 0;
+  height: 0;
   pointer-events: none;
-  opacity: 0;
-  clip-path: inset(0 0 100% 0);
-  will-change: opacity, clip-path;
-  overflow: hidden;
 }
-.ab-clone-inner {
-  position: absolute;
-  inset: 0;
-  will-change: transform;
-  filter:
-    drop-shadow(-2px 0 0 rgba(0,240,255,0.55))
-    drop-shadow(2px 0 0 rgba(255,0,168,0.55));
-  background: rgba(255,255,255,0.02);
-}
-.ab-clone-fx {
+
+/* The moving scanline band — 24px tall, soft edges, travels via GSAP. */
+.ab-scan {
   position: absolute;
   left: 0;
   right: 0;
-  height: 22px;
   top: 0;
+  height: 24px;
+  z-index: 25;
   pointer-events: none;
-  will-change: transform;
-  background: linear-gradient(to bottom,
+  opacity: 0;
+  will-change: transform, opacity;
+  /* Rounded falloff so the band itself has soft top/bottom edges. */
+  -webkit-mask-image: linear-gradient(to bottom,
     transparent 0%,
-    rgba(0,240,255,0.06) 18%,
-    rgba(255,255,255,0.10) 50%,
-    rgba(255,0,168,0.06) 82%,
+    #000 22%,
+    #000 78%,
     transparent 100%);
-  mix-blend-mode: screen;
+  mask-image: linear-gradient(to bottom,
+    transparent 0%,
+    #000 22%,
+    #000 78%,
+    transparent 100%);
 }
-.ab-clone-noise {
+
+/* Boost contrast / brightness / saturation on the real pixels behind. */
+.ab-scan-grade {
   position: absolute;
   inset: 0;
-  pointer-events: none;
+  backdrop-filter: brightness(1.25) contrast(1.4) saturate(1.6);
+  -webkit-backdrop-filter: brightness(1.25) contrast(1.4) saturate(1.6);
+}
+
+/* RGB split — two tinted backdrop layers offset left (cyan) / right (magenta). */
+.ab-scan-rgb {
+  position: absolute;
+  inset: 0;
+  mix-blend-mode: screen;
+}
+.ab-scan-cyan {
+  transform: translateX(-8px);
+  background: rgba(0, 240, 255, 0.12);
+  filter: drop-shadow(6px 0 0 rgba(0, 240, 255, 0.45));
+}
+.ab-scan-magenta {
+  transform: translateX(8px);
+  background: rgba(255, 0, 168, 0.12);
+  filter: drop-shadow(-6px 0 0 rgba(255, 0, 168, 0.45));
+}
+
+/* Fractal-noise overlay — high-frequency digital noise, ~15fps steps.
+   Displaced by the SVG feTurbulence+feDisplacementMap so the noise tears
+   horizontally, reading as unstable video signal. */
+.ab-scan-noise {
+  position: absolute;
+  inset: -20px;
   opacity: 0.5;
   mix-blend-mode: overlay;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='80' height='80'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.35'/%3E%3C/svg%3E");
-  background-size: 80px 80px;
-  animation: ab-noise-shift 0.5s steps(2) infinite;
+  filter: url(#ab-disp);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.6'/%3E%3C/svg%3E");
+  background-size: 120px 120px;
+  animation: ab-noise-shift 0.066s steps(1) infinite;
 }
 @keyframes ab-noise-shift {
-  0% { transform: translate(0,0); }
-  50% { transform: translate(-4px,2px); }
-  100% { transform: translate(3px,-3px); }
+  0% { transform: translate(0, 0); }
+  16% { transform: translate(-6px, 2px); }
+  33% { transform: translate(5px, -3px); }
+  50% { transform: translate(-4px, 4px); }
+  66% { transform: translate(7px, -1px); }
+  83% { transform: translate(-8px, 3px); }
+  100% { transform: translate(3px, -4px); }
+}
+
+/* Horizontal tearing strips — each shifts independently via GSAP. */
+.ab-scan-strips {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+.ab-strip {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  background: rgba(255, 255, 255, 0.06);
+  mix-blend-mode: screen;
+  will-change: transform;
+}
+
+/* Occasional white interference flash — 20–40ms, band only. */
+.ab-scan-flash {
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.85);
+  mix-blend-mode: screen;
+  opacity: 0;
+  will-change: opacity;
+}
+
+/* Soft scanline glow — rounded falloff, not a neon laser. */
+.ab-scan-glow {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to bottom,
+    transparent 0%,
+    rgba(0, 240, 255, 0.05) 30%,
+    rgba(255, 255, 255, 0.07) 50%,
+    rgba(255, 0, 168, 0.05) 70%,
+    transparent 100%);
+  mix-blend-mode: screen;
 }
 `;
 
