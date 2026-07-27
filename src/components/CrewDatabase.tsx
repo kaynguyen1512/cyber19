@@ -1,6 +1,7 @@
-import { useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import type { CSSProperties } from 'react';
 import { useCameraScroll } from '@/lib/cameraController';
+import gsap from 'gsap';
 import { IMAGES } from '@/lib/images';
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -52,20 +53,18 @@ const DAVID_DWELL = 0.1;            // David's reveal window after reaching came
 // Active window radius — scenes within current ± WINDOW_RADIUS receive updates.
 const WINDOW_RADIUS = 2;
 
-// Decode is skipped while scroll velocity (px/frame) exceeds this threshold.
-const DECODE_VELOCITY_LIMIT = 600;
-
-// Per-scene DOM write cache. Numeric values are cached and compared directly so
-// we skip both style mutations and per-frame string allocation. Reveal
+// Per-scene DOM write cache. Tracks the last value written for each property
+// so we can skip style mutations that would not change anything. Reveal
 // progression itself is NEVER cached — only individual DOM writes.
 interface SceneCache {
-  z: number;
-  opacity: number;
-  textOpacity: number[]; // per-slot last opacity
-  textY: number[]; // per-slot last translateY px
+  transform: string;
+  opacity: string;
+  bgOpacity: string;
+  textOpacity: string[]; // per-slot last opacity
+  textTransform: string[]; // per-slot last transform
 }
 function makeCache(): SceneCache {
-  return { z: NaN, opacity: NaN, textOpacity: [], textY: [] };
+  return { transform: '', opacity: '', bgOpacity: '', textOpacity: [], textTransform: [] };
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -133,6 +132,7 @@ function CrewScene({ member, index, refs }: { member: CrewMember; index: number;
     transform: `translateZ(${-START_Z - index * SPACING}px)`,
     opacity: 0,
     pointerEvents: 'none',
+    willChange: 'transform, opacity',
   };
 
   const portrait = (
@@ -163,12 +163,12 @@ function CrewScene({ member, index, refs }: { member: CrewMember; index: number;
         <span
           ref={(el) => refs.text(4, el)}
           className="crew-file-led"
-          style={{ opacity: 0 }}
+          style={{ opacity: 0, willChange: 'opacity' }}
         />
         <p
           ref={(el) => refs.text(0, el)}
           className="font-mono text-[13px] md:text-[14px] font-semibold tracking-[0.42em] text-cyan-300"
-          style={{ opacity: 0 }}
+          style={{ opacity: 0, willChange: 'transform, opacity' }}
         >
           {member.file}
         </p>
@@ -176,25 +176,31 @@ function CrewScene({ member, index, refs }: { member: CrewMember; index: number;
       <p
         ref={(el) => refs.text(1, el)}
         className="crew-codename mt-5 font-mono text-[16px] font-semibold uppercase tracking-[0.22em]"
-        style={{ opacity: 0 }}
+        style={{ opacity: 0, willChange: 'transform, opacity' }}
       >
         {member.codename}
       </p>
       <div
         ref={(el) => refs.text(3, el)}
         className={`mt-3 flex flex-col ${align}`}
-        style={{ opacity: 0 }}
+        style={{ opacity: 0, willChange: 'transform, opacity' }}
       >
         <span
           className="font-mono text-[11px] tracking-[0.25em]"
-          style={{ color: '#FFE86A' }}
+          style={{
+            color: '#FFE86A',
+            textShadow: '0 0 5px rgba(255,230,0,.35)',
+          }}
         >
           {member.meta[0]}
         </span>
 
         <span
           className="crew-cursor mt-1 font-mono text-[11px] tracking-[0.25em]"
-          style={{ color: '#FFE86A' }}
+          style={{
+            color: '#FFE86A',
+            textShadow: '0 0 5px rgba(255,230,0,.35)',
+          }}
         >
           {member.meta[1]}
         </span>
@@ -206,7 +212,7 @@ function CrewScene({ member, index, refs }: { member: CrewMember; index: number;
         className={`crew-name mt-4 font-display font-black leading-[0.92] tracking-tight ${
           isFinal ? 'text-[clamp(3.2rem,9vw,6.5rem)]' : 'text-[clamp(2.6rem,6.5vw,5rem)]'
         }`}
-        style={{ opacity: 0 }}
+        style={{ opacity: 0, willChange: 'transform, opacity' }}
       >
         {member.name}
       </h3>
@@ -263,7 +269,7 @@ const decodeRafs = new WeakMap<HTMLElement, number>();
 function startDecode(el: HTMLElement) {
   const prev = decodeRafs.get(el);
   if (prev) cancelAnimationFrame(prev);
-  const finalText = el.dataset.originalText ?? el.textContent ?? '';
+  const finalText = el.textContent ?? '';
   if (!finalText) return;
   const len = finalText.length;
   const duration = 170 + Math.random() * 70; // 170–240ms
@@ -306,29 +312,24 @@ function cancelDecode(el: HTMLElement) {
 // Slots 0–2 are the decoded labels; slot 3 (metadata + divider) rides the
 // codename's timing, slot 4 (status LED) rides the FILE label's timing.
 // Reveal depends only on the current visibility parameter f — no progression
-// is cached. Individual DOM writes are cached (numeric compare) to avoid
-// redundant style mutations and per-frame string allocation.
-function revealText(
-  els: (HTMLElement | null)[],
-  f: number,
-  cache: SceneCache,
-  allowDecode: boolean,
-) {
+// is cached. Individual DOM writes are cached to avoid redundant style mutations.
+function revealText(els: (HTMLElement | null)[], f: number, cache: SceneCache) {
   const fe = easeInOutCubic(clamp01(f));
   for (let j = 0; j < 3; j++) {
     const el = els[j];
     if (!el) continue;
     const op = clamp01((fe - j * 0.33) / 0.33);
-    if (op !== cache.textOpacity[j]) {
-      el.style.opacity = String(op);
-      cache.textOpacity[j] = op;
+    const opStr = String(op);
+    if (opStr !== cache.textOpacity[j]) {
+      el.style.opacity = opStr;
+      cache.textOpacity[j] = opStr;
     }
-    const y = (1 - op) * 12;
-    if (y !== cache.textY[j]) {
-      el.style.transform = `translateY(${y}px)`;
-      cache.textY[j] = y;
+    const tf = `translateY(${(1 - op) * 12}px)`;
+    if (tf !== cache.textTransform[j]) {
+      el.style.transform = tf;
+      cache.textTransform[j] = tf;
     }
-    if (allowDecode && op > 0.04 && !el.dataset.decoded) {
+    if (op > 0.04 && !el.dataset.decoded) {
       if (el.dataset.originalText === undefined) el.dataset.originalText = el.textContent ?? '';
       el.dataset.decoded = '1';
       startDecode(el);
@@ -337,39 +338,42 @@ function revealText(
   const meta = els[3];
   if (meta) {
     const op = clamp01((fe - 0.33) / 0.33);
-    if (op !== cache.textOpacity[3]) {
-      meta.style.opacity = String(op);
-      cache.textOpacity[3] = op;
+    const opStr = String(op);
+    if (opStr !== cache.textOpacity[3]) {
+      meta.style.opacity = opStr;
+      cache.textOpacity[3] = opStr;
     }
-    const y = (1 - op) * 12;
-    if (y !== cache.textY[3]) {
-      meta.style.transform = `translateY(${y}px)`;
-      cache.textY[3] = y;
+    const tf = `translateY(${(1 - op) * 12}px)`;
+    if (tf !== cache.textTransform[3]) {
+      meta.style.transform = tf;
+      cache.textTransform[3] = tf;
     }
   }
   const led = els[4];
   if (led) {
-    const op = clamp01(fe);
-    if (op !== cache.textOpacity[4]) {
-      led.style.opacity = String(op);
-      cache.textOpacity[4] = op;
+    const opStr = String(clamp01(fe));
+    if (opStr !== cache.textOpacity[4]) {
+      led.style.opacity = opStr;
+      cache.textOpacity[4] = opStr;
     }
   }
 }
 
 // Restore a scene to its hidden resting state when it leaves the active window.
 // Ensures no stale cached values remain and the scene behaves like a fresh
-// render when it re-enters. Cancels all in-flight decodes and drops GPU layers.
+// render when it re-enters.
 function resetScene(
   scene: HTMLDivElement,
+  bg: HTMLDivElement | null,
   textEls: (HTMLElement | null)[],
   cache: SceneCache,
   index: number,
 ) {
   const restingZ = -START_Z - index * SPACING;
-  scene.style.transform = `translateZ(${restingZ}px)`;
+  const tf = `translateZ(${restingZ}px)`;
+  scene.style.transform = tf;
   scene.style.opacity = '0';
-  scene.style.willChange = 'auto';
+  if (bg) bg.style.opacity = '0';
 
   for (const el of textEls) {
     if (!el) continue;
@@ -378,22 +382,21 @@ function resetScene(
     cancelDecode(el);
   }
 
-  cache.z = restingZ;
-  cache.opacity = 0;
+  cache.transform = tf;
+  cache.opacity = '0';
+  cache.bgOpacity = '0';
   cache.textOpacity = [];
-  cache.textY = [];
+  cache.textTransform = [];
 }
 
 function useCrewEngine(
   sectionRef: React.RefObject<HTMLElement | null>,
   sceneRefs: React.RefObject<(HTMLDivElement | null)[]>,
+  bgRefs: React.RefObject<(HTMLDivElement | null)[]>,
   textRefs: React.RefObject<(HTMLElement | null)[][]>,
 ) {
   const cacheRef = useRef<(SceneCache | null)[]>([]);
   const activeRef = useRef<Set<number>>(new Set());
-  const lastOffsetRef = useRef<number>(NaN);
-  const lastTimeRef = useRef<number>(NaN);
-  const velocityRef = useRef<number>(0);
 
   // The camera target is driven by ScrollTrigger progress (which Lenis feeds).
   // The controller eases toward that target with momentum — a tiny cinematic
@@ -403,23 +406,10 @@ function useCrewEngine(
     (p) => (p < P_CAMERA ? (p / P_CAMERA) * CAMERA_TRAVEL : CAMERA_TRAVEL),
     (offset) => {
       const scenes = sceneRefs.current;
+      const bgs = bgRefs.current;
       const texts = textRefs.current;
       const caches = cacheRef.current;
-      if (!scenes || !texts) return;
-
-      // Track scroll velocity (px / ms) to gate decode during fast scrolling.
-      const now = performance.now();
-      if (!isNaN(lastOffsetRef.current)) {
-        const dt = now - lastTimeRef.current;
-        if (dt > 0) {
-          const v = Math.abs(offset - lastOffsetRef.current) / dt;
-          // Exponential smoothing for stability.
-          velocityRef.current = velocityRef.current * 0.5 + v * 0.5;
-        }
-      }
-      lastOffsetRef.current = offset;
-      lastTimeRef.current = now;
-      const allowDecode = velocityRef.current < DECODE_VELOCITY_LIMIT;
+      if (!scenes || !bgs || !texts) return;
 
       // Active-scene windowing: only update current ± WINDOW_RADIUS. Scenes
       // outside this window are frozen at their hidden resting state.
@@ -437,7 +427,7 @@ function useCrewEngine(
           if (!scene) continue;
           let cache = caches[i];
           if (!cache) { cache = makeCache(); caches[i] = cache; }
-          resetScene(scene, texts[i] ?? [], cache, i);
+          resetScene(scene, bgs[i], texts[i] ?? [], cache, i);
         }
       }
       activeRef.current = newActive;
@@ -454,15 +444,25 @@ function useCrewEngine(
         const op = depthOpacity(z);
 
         // Cached transform + opacity — only write when the value actually
-        // changes. Numeric compare avoids per-frame string allocation.
-        if (z !== cache.z) {
-          scene.style.transform = `translateZ(${z}px)`;
-          scene.style.willChange = 'transform, opacity';
-          cache.z = z;
+        // changes. No layout recalculation, just style mutation.
+        const tf = `translateZ(${z}px)`;
+        if (tf !== cache.transform) {
+          scene.style.transform = tf;
+          cache.transform = tf;
         }
-        if (op !== cache.opacity) {
-          scene.style.opacity = String(op);
-          cache.opacity = op;
+        const opStr = String(op);
+        if (opStr !== cache.opacity) {
+          scene.style.opacity = opStr;
+          cache.opacity = opStr;
+        }
+
+        const bg = bgs[i];
+        if (bg) {
+          const bgOpStr = String(op * 0.55);
+          if (bgOpStr !== cache.bgOpacity) {
+            bg.style.opacity = bgOpStr;
+            cache.bgOpacity = bgOpStr;
+          }
         }
 
         // Reveal: always recompute from current visibility. No progression
@@ -477,7 +477,7 @@ function useCrewEngine(
           // Others reveal as they approach the camera.
           f = (z + REVEAL_START) / REVEAL_START;
         }
-        revealText(texts[i] ?? [], f, cache, allowDecode);
+        revealText(texts[i] ?? [], f, cache);
       }
     },
   );
@@ -490,9 +490,10 @@ function useCrewEngine(
 export default function CrewDatabase() {
   const sectionRef = useRef<HTMLElement | null>(null);
   const sceneRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const bgRefs = useRef<(HTMLDivElement | null)[]>([]);
   const textRefs = useRef<(HTMLElement | null)[][]>([]);
 
-  useCrewEngine(sectionRef, sceneRefs, textRefs);
+  useCrewEngine(sectionRef, sceneRefs, bgRefs, textRefs);
 
   return (
     <section ref={sectionRef} id="crew" className="relative bg-[#050507]">
@@ -511,26 +512,19 @@ export default function CrewDatabase() {
             overflow: 'hidden',
           }}
         >
-          {/* Single static background for the entire Crew section */}
+          {/* Background atmosphere — each character owns its own fullscreen bg */}
           <div className="pointer-events-none absolute inset-0" style={{ zIndex: 0 }}>
-            <img
-              src="https://ik.imagekit.io/zznoau6lx/5248762.jpg"
-              alt=""
-              loading="lazy"
-              style={{
-                position: 'absolute',
-                inset: 0,
-                width: '100%',
-                height: '100%',
-                objectFit: 'cover',
-                objectPosition: 'center',
-                pointerEvents: 'none',
-              }}
-            />
-            <div
-              className="absolute inset-0"
-              style={{ background: 'rgba(5,5,7,0.65)' }}
-            />
+            {CREW.map((m, i) => (
+              <div
+                key={m.name}
+                ref={(el) => { bgRefs.current[i] = el; }}
+                className="absolute inset-0"
+                style={{ opacity: 0 }}
+              >
+                <img src={m.img} alt="" className="h-full w-full object-cover" loading="lazy" />
+                <div className="absolute inset-0 bg-[#050507]/65" />
+              </div>
+            ))}
           </div>
 
           {/* Foreground 3D scene */}
@@ -577,47 +571,178 @@ export default function CrewDatabase() {
 }
 
 /* ═══════════════════════════════════════════════════════════════════
-   CYBER FRAME — cyberpunk data-chip portrait frame (static, no animations)
-   Keeps the image at exactly the same size/position; only adds a lightweight
-   shell. No continuous animations, no filters, no blend modes, no glow pulses.
+   CYBER FRAME — cyberpunk data-chip portrait frame (HTML + Tailwind only)
+   Keeps the image at exactly the same size/position; only adds the shell.
    ═══════════════════════════════════════════════════════════════════ */
 
-/* Injected once. All styling is static — borders and solid colors only.
-   The only runtime mutations are transform/opacity driven by the scroll
-   engine on the scene container and text slots. */
+/* Injected once. All effects animate only transform / opacity / box-shadow.
+   No layout properties, no heavy filters — keeps 60 FPS. */
 function CrewFXStyles() {
   return (
     <style>{`
+@keyframes crewFlicker {
+  0%,100% { opacity: 1; }
+  92.5% { opacity: 1; }
+  93.5% { opacity: 0.96; }
+  95% { opacity: 1; }
+  97% { opacity: 0.97; }
+  98.5% { opacity: 1; }
+}
+@keyframes crewGlassSweep {
+  0% { transform: translateX(-160%) skewX(-18deg); opacity: 0; }
+  14% { opacity: 0.5; }
+  86% { opacity: 0.35; }
+  100% { transform: translateX(260%) skewX(-18deg); opacity: 0; }
+}
+@keyframes crewScanBar {
+  0% { transform: translateY(-30px); opacity: 0; }
+  6% { opacity: 0.75; }
+  94% { opacity: 0.75; }
+  100% { transform: translateY(900px); opacity: 0; }
+}
+@keyframes crewHoloGlow {
+  0%,100% { box-shadow: 0 0 16px rgba(0,240,255,0.22), inset 0 0 16px rgba(0,240,255,0.12); }
+  50% { box-shadow: 0 0 28px rgba(0,240,255,0.42), inset 0 0 24px rgba(0,240,255,0.22); }
+}
+@keyframes crewBloom {
+  0%,100% { opacity: 0.25; }
+  50% { opacity: 0.55; }
+}
+@keyframes crewLedPulse {
+  0%,100% { opacity: 0.35; box-shadow: 0 0 3px currentColor; }
+  50% { opacity: 1; box-shadow: 0 0 7px currentColor, 0 0 13px currentColor; }
+}
+.crew-flicker { animation: crewFlicker 4.2s steps(1) infinite; }
+.crew-scanlines { position:absolute; inset:0; background: repeating-linear-gradient(0deg, transparent 0, transparent 2px, rgba(0,0,0,0.32) 2px, rgba(0,0,0,0.32) 3px); opacity:0.22; mix-blend-mode:multiply; pointer-events:none; }
+.crew-glass { position:absolute; inset:0; overflow:hidden; pointer-events:none; }
+.crew-glass-bar { position:absolute; top:0; left:0; width:42%; height:100%; background:linear-gradient(115deg, transparent, rgba(255,255,255,0.16), transparent); animation: crewGlassSweep 7s ease-in-out infinite; }
+.crew-scanbar { position:absolute; inset:0; overflow:hidden; pointer-events:none; }
+.crew-scanbar-line { position:absolute; left:0; right:0; height:12px; top:0; background:linear-gradient(180deg, transparent, rgba(0,240,255,0.4), transparent); box-shadow:0 0 14px rgba(0,240,255,0.45); animation: crewScanBar 5.5s linear infinite; }
+.crew-ca-red { position:absolute; inset:0; box-shadow: inset 2px 0 0 rgba(255,0,60,0.35), inset -2px 0 0 rgba(255,0,60,0.22); mix-blend-mode:screen; opacity:0.5; pointer-events:none; }
+.crew-ca-cyan { position:absolute; inset:0; box-shadow: inset -2px 0 0 rgba(0,240,255,0.35), inset 2px 0 0 rgba(0,240,255,0.22); mix-blend-mode:screen; opacity:0.5; pointer-events:none; }
+.crew-bloom { position:absolute; inset:0; background:radial-gradient(ellipse at center, rgba(0,240,255,0.12), transparent 70%); animation: crewBloom 5s ease-in-out infinite; pointer-events:none; mix-blend-mode:screen; }
+.crew-holo { position:absolute; inset:0; border:1px solid rgba(0,240,255,0.28); animation: crewHoloGlow 4s ease-in-out infinite; pointer-events:none; }
+.crew-led { animation: crewLedPulse 2s ease-in-out infinite; }
+
+/* ── Personnel-database text panel ── */
+@keyframes crewFileLed {
+  0%,100% { box-shadow: 0 0 2px rgba(0,240,255,0.4); }
+  50% { box-shadow: 0 0 5px rgba(0,240,255,0.8), 0 0 10px rgba(0,240,255,0.4); }
+}
 .crew-file-led {
   width: 5px; height: 5px; border-radius: 9999px;
   background: #00f0ff;
-  box-shadow: 0 0 4px rgba(0,240,255,0.6);
+  animation: crewFileLed 2.6s ease-in-out infinite;
+}
+@keyframes crewHoloShimmer {
+  0% { background-position: 220% 0; }
+  100% { background-position: -120% 0; }
 }
 .crew-codename {
-  color: #7fe9ff;
-}
-.crew-name {
-  background: linear-gradient(90deg, #00f0ff 0%, #4d7fff 25%, #ff4d8d 50%, #ffe600 75%, #00f0ff 100%);
+  background: linear-gradient(100deg,
+    rgba(0,240,255,0.45) 0%,
+    rgba(0,240,255,0.95) 42%,
+    rgba(210,250,255,0.98) 50%,
+    rgba(0,240,255,0.95) 58%,
+    rgba(0,240,255,0.45) 100%);
+  background-size: 250% 100%;
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
   color: transparent;
+  filter: drop-shadow(0 0 5px rgba(0,240,255,0.45));
+  animation: crewHoloShimmer 7s linear infinite;
+}
+@keyframes crewNameFlow {
+  0% { background-position: 0% 50%; }
+  100% { background-position: 300% 50%; }
+}
+.crew-name {
+  background: linear-gradient(90deg,
+    #00f0ff 0%, #4d7fff 12%, #b14dff 24%, #ff2ec4 36%,
+    #ff4d8d 48%, #ffe600 60%, #ffffff 72%, #4d7fff 84%, #00f0ff 100%);
+  background-size: 300% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  filter: drop-shadow(0 0 8px rgba(0,240,255,0.28));
+  animation: crewNameFlow 16s linear infinite;
+  position: relative;
 }
 .crew-divider {
+  position: relative;
   height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(0,240,255,0.45), transparent);
+  overflow: hidden;
   opacity: 0.6;
+}
+.crew-divider::before {
+  content: '';
+  position: absolute; inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(0,240,255,0.45), transparent);
+}
+.crew-divider::after {
+  content: '';
+  position: absolute; top: 0; left: 0;
+  height: 100%; width: 38%;
+  background: linear-gradient(90deg, transparent, rgba(0,240,255,0.95), transparent);
+  box-shadow: 0 0 8px rgba(0,240,255,0.6);
+  animation: crewDividerSweep 4.8s ease-in-out infinite;
+}
+@keyframes crewDividerSweep {
+  0% { transform: translateX(-110%); opacity: 0; }
+  18% { opacity: 1; }
+  82% { opacity: 1; }
+  100% { transform: translateX(280%); opacity: 0; }
+}
+@keyframes crewCursorBlink {
+  0%, 48% { opacity: 0.85; }
+  50%, 100% { opacity: 0; }
 }
 .crew-cursor::after {
   content: '▌';
   margin-left: 5px;
   color: rgba(0,240,255,0.7);
+  animation: crewCursorBlink 1.3s steps(1) infinite;
 }
     `}</style>
   );
 }
 
+/* Random micro-glitch + brief RGB split on the portrait image only.
+   Fires every 6–12s, lasts 100–150ms. No React re-renders, no layout. */
+function useCyberGlitch(imgRef: React.RefObject<HTMLImageElement | null>) {
+  useEffect(() => {
+    const img = imgRef.current;
+    if (!img) return;
+    let killed = false;
+    let to: ReturnType<typeof setTimeout>;
+    const fire = () => {
+      if (killed) return;
+      const dur = 0.1 + Math.random() * 0.05; // 100–150ms
+      const tx = (Math.random() - 0.5) * 5;
+      const tl = gsap.timeline({ onComplete: () => gsap.set(img, { filter: 'none', x: 0 }) });
+      tl.fromTo(
+        img,
+        { filter: 'drop-shadow(3px 0 #ff003c) drop-shadow(-3px 0 #00f0ff)' },
+        { filter: 'drop-shadow(0px 0 rgba(255,0,60,0)) drop-shadow(0px 0 rgba(0,240,255,0))', duration: dur, ease: 'power2.out' },
+      );
+      tl.to(img, { x: tx, duration: dur * 0.5, ease: 'power2.out', yoyo: true, repeat: 1 }, 0);
+      to = setTimeout(fire, 6000 + Math.random() * 6000);
+    };
+    to = setTimeout(fire, 6000 + Math.random() * 6000);
+    return () => {
+      killed = true;
+      clearTimeout(to);
+      gsap.killTweensOf(img);
+    };
+  }, [imgRef]);
+}
+
 function CyberFrame({ member, index }: { member: CrewMember; index: number }) {
+  const imgRef = useRef<HTMLImageElement | null>(null);
+  useCyberGlitch(imgRef);
+  const d = (n: number) => `${(index * 0.7 + n).toFixed(2)}s`;
   return (
     <div className="relative h-full w-full">
       {/* Thick dark metallic outer shell with bevel */}
@@ -627,7 +752,7 @@ function CyberFrame({ member, index }: { member: CrewMember; index: number }) {
           background:
             'linear-gradient(145deg, #23262b 0%, #0a0b0d 38%, #15171b 62%, #050608 100%)',
           boxShadow:
-            'inset 0 0 0 1px rgba(0,240,255,0.18), inset 0 0 0 2px rgba(0,0,0,0.7), 0 0 0 1px #000, 0 22px 50px rgba(0,0,0,0.85)',
+            'inset 0 0 0 1px rgba(0,240,255,0.18), inset 0 0 0 2px rgba(0,0,0,0.7), inset 0 2px 6px rgba(255,255,255,0.06), inset 0 -3px 10px rgba(0,0,0,0.9), 0 0 0 1px #000, 0 22px 50px rgba(0,0,0,0.85), 0 0 40px rgba(0,240,255,0.12)',
           clipPath:
             'polygon(0 14px, 14px 0, calc(100% - 28px) 0, 100% 28px, 100% calc(100% - 14px), calc(100% - 14px) 100%, 28px 100%, 0 calc(100% - 28px))',
         }}
@@ -639,26 +764,29 @@ function CyberFrame({ member, index }: { member: CrewMember; index: number }) {
             inset: '8px',
             background: 'linear-gradient(150deg, #14161a, #070809)',
             boxShadow:
-              'inset 0 0 0 1px rgba(0,240,255,0.12), inset 0 0 0 2px rgba(0,0,0,0.6)',
+              'inset 0 0 0 1px rgba(255,255,255,0.05), inset 0 0 0 2px rgba(0,0,0,0.6), inset 0 0 22px rgba(0,0,0,0.85)',
             clipPath:
               'polygon(0 10px, 10px 0, calc(100% - 22px) 0, 100% 22px, 100% calc(100% - 10px), calc(100% - 10px) 100%, 22px 100%, 0 calc(100% - 22px))',
           }}
         >
           {/* Image well */}
           <div
-            className="absolute overflow-hidden"
+            className="crew-card-well absolute overflow-hidden"
             style={{
               inset: '12px',
-              boxShadow: 'inset 0 0 0 1px rgba(0,240,255,0.25), inset 0 0 0 2px rgba(0,0,0,0.8)',
+              boxShadow:
+                'inset 0 0 0 1px rgba(0,240,255,0.25), inset 0 0 0 2px rgba(0,0,0,0.8), inset 0 0 30px rgba(0,0,0,0.9)',
               clipPath:
                 'polygon(0 8px, 8px 0, calc(100% - 18px) 0, 100% 18px, 100% calc(100% - 8px), calc(100% - 8px) 100%, 18px 100%, 0 calc(100% - 18px))',
             }}
           >
             <img
+              ref={imgRef}
               src={member.img}
               alt={member.name}
-              className="h-full w-full object-cover object-top"
+              className="crew-flicker h-full w-full object-cover object-top"
               loading="lazy"
+              style={{ animationDelay: d(1.3) }}
             />
             {/* Color grade */}
             <div
@@ -668,15 +796,58 @@ function CyberFrame({ member, index }: { member: CrewMember; index: number }) {
                   'linear-gradient(180deg, rgba(5,5,7,0.15) 0%, transparent 22%, transparent 62%, rgba(5,5,7,0.72) 100%)',
               }}
             />
-            {/* Static scanline texture */}
+            {/* Diagonal holographic sheen */}
             <div
-              className="pointer-events-none absolute inset-0"
+              className="pointer-events-none absolute inset-0 opacity-40"
               style={{
-                background: 'repeating-linear-gradient(0deg, transparent 0, transparent 2px, rgba(0,0,0,0.28) 2px, rgba(0,0,0,0.28) 3px)',
-                opacity: 0.2,
+                background:
+                  'repeating-linear-gradient(115deg, transparent 0px, transparent 5px, rgba(0,240,255,0.04) 5px, rgba(0,240,255,0.04) 6px)',
+                mixBlendMode: 'screen',
               }}
             />
+            {/* CRT scanlines */}
+            <div className="crew-scanlines" />
+            {/* Glass reflection sweep */}
+            <div className="crew-glass">
+              <div className="crew-glass-bar" style={{ animationDelay: d(0.4) }} />
+            </div>
+            {/* Moving scan bar */}
+            <div className="crew-scanbar">
+              <div className="crew-scanbar-line" style={{ animationDelay: d(0.6) }} />
+            </div>
+            {/* Chromatic aberration edges */}
+            <div className="crew-ca-red" />
+            <div className="crew-ca-cyan" />
+            {/* Cyan bloom */}
+            <div className="crew-bloom" style={{ animationDelay: d(0.2) }} />
           </div>
+
+          {/* Thin magenta electronic traces */}
+          <div
+            className="pointer-events-none absolute"
+            style={{
+              left: '4px',
+              top: '4px',
+              right: '4px',
+              bottom: '4px',
+              background:
+                'linear-gradient(90deg, transparent 0%, transparent 14%, rgba(255,0,200,0.5) 14%, rgba(255,0,200,0.5) 15%, transparent 15%, transparent 86%, rgba(255,0,200,0.5) 86%, rgba(255,0,200,0.5) 87%, transparent 87%)',
+              mixBlendMode: 'screen',
+              opacity: 0.6,
+            }}
+          />
+          <div
+            className="pointer-events-none absolute"
+            style={{
+              left: '14%',
+              top: '4px',
+              width: '1px',
+              bottom: '4px',
+              background:
+                'linear-gradient(180deg, transparent, rgba(255,0,200,0.4), transparent)',
+              mixBlendMode: 'screen',
+            }}
+          />
 
           {/* Cyan glowing corner brackets */}
           <CornerBracket position="top-left" />
@@ -740,41 +911,44 @@ function CyberFrame({ member, index }: { member: CrewMember; index: number }) {
           <Bolt style={{ bottom: '10px', left: '10px' }} />
           <Bolt style={{ bottom: '10px', right: '10px' }} />
 
-          {/* Static indicator LEDs */}
+          {/* Indicator LEDs */}
           <div
-            className="absolute"
+            className="crew-led absolute"
             style={{
               top: '26px',
               left: '14px',
               width: '5px',
               height: '5px',
               borderRadius: '9999px',
+              color: '#00f0ff',
               background: '#00f0ff',
-              boxShadow: '0 0 4px rgba(0,240,255,0.7)',
+              animationDelay: d(0.1),
             }}
           />
           <div
-            className="absolute"
+            className="crew-led absolute"
             style={{
               top: '26px',
               right: '14px',
               width: '5px',
               height: '5px',
               borderRadius: '9999px',
+              color: '#ffe600',
               background: '#ffe600',
-              boxShadow: '0 0 4px rgba(255,230,0,0.7)',
+              animationDelay: d(0.5),
             }}
           />
           <div
-            className="absolute"
+            className="crew-led absolute"
             style={{
               bottom: '26px',
               left: '14px',
               width: '5px',
               height: '5px',
               borderRadius: '9999px',
+              color: '#ff2d2d',
               background: '#ff2d2d',
-              boxShadow: '0 0 4px rgba(255,45,45,0.7)',
+              animationDelay: d(0.9),
             }}
           />
 
@@ -803,6 +977,9 @@ function CyberFrame({ member, index }: { member: CrewMember; index: number }) {
                 'repeating-linear-gradient(45deg, rgba(255,230,0,0.6) 0px, rgba(255,230,0,0.6) 3px, transparent 3px, transparent 6px)',
             }}
           />
+
+          {/* Holographic edge glow */}
+          <div className="crew-holo" style={{ animationDelay: d(0) }} />
         </div>
       </div>
     </div>
@@ -826,7 +1003,7 @@ function CornerBracket({ position }: { position: 'top-left' | 'top-right' | 'bot
   return (
     <div
       className={`${base} ${map[position]} ${borderMap[position]}`}
-      style={{ borderColor: '#00f0ff' }}
+      style={{ borderColor: '#00f0ff', boxShadow: '0 0 6px rgba(0,240,255,0.7)' }}
     />
   );
 }
