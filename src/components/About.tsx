@@ -232,7 +232,7 @@ const aboutGlitchStyles = `
   left: 0;
   right: 0;
   top: 0;
-  height: 24px;
+  height: 20px;
   z-index: 25;
   pointer-events: none;
   opacity: 0;
