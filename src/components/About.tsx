@@ -117,7 +117,7 @@ export default function About() {
   }}
 >
   <source
-    src="https://cdn-cf-east.streamable.com/video/mp4/jb3r6e.mp4?Expires=1785388763969&Key-Pair-Id=APKAIEYUVEN4EVB2OKEQ&Signature=kmjkNM8bYAwUIsNDD91HwOJm21irUplCaHg6At6S5EwQYVQTODz1jegZBiH2EseLMUSlGq-HYbGisJVfauPYwT3NudfMFXv6YoXo4gVwrg~AJ9vCOLtuitjpeqZC2FIwvU0sReen8OuC8Zs5YTwyx4Obtad92jXQcXoTgbF5P5Sl2Q0dcXATVjOBNcDn4njjgCdLPSo2rkb9xmD83SdqRh7ngMcJJwN4nQyemSd7gais1BiJYHmERehCgpQMNcY28IYvrgtVbJLoZPdC-nrpQQYoSVk2eg2iGG7qke17NgrrCztbsN6iOGh4j0E5SOc4t7k9o6bDQDgqYxSrND~Rg__"
+    src="https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4"
     type="video/mp4"
   />
 </video>
