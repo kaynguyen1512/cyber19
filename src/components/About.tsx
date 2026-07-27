@@ -328,7 +328,15 @@ const aboutGlitchStyles = `
   position: absolute;
   left: 0;
   width: 100%;
-  background: rgba(255, 255, 255, 0.06);
+
+  background:
+    linear-gradient(
+      90deg,
+      rgba(0,232,255,.25),
+      rgba(255,255,255,.18),
+      rgba(255,45,166,.25)
+    );
+
   mix-blend-mode: screen;
   will-change: transform;
 }
