@@ -13,9 +13,10 @@ import {
  * Pure React + TypeScript. No external animation libraries.
  *
  * The full text first scrambles for `maxIterations` frames, then characters
- * lock in left → right, one per frame. Spaces and line breaks are preserved
- * and never scrambled. The animation plays exactly once when the element
- * enters the viewport, then stays readable forever.
+ * lock in left → right. Spaces and line breaks are preserved and never
+ * scrambled. The automatic reveal plays exactly once, the first time the
+ * element enters the viewport; afterwards the text stays readable. Clicking
+ * the element manually replays the animation from the beginning.
  *
  * Rich text is supported via `segments` (each with its own className); the
  * reveal pointer advances across the concatenated text so the whole heading
@@ -32,7 +33,7 @@ export interface DecryptedTextProps {
   text?: string;
   /** Rich text mode: array of { text, className } segments. */
   segments?: DecryptedTextSegment[];
-  /** Scramble frame interval in ms (40–60 recommended). */
+  /** Base scramble frame interval in ms. */
   speed?: number;
   /** Number of full-text scramble frames before left-to-right reveal begins. */
   maxIterations?: number;
@@ -44,6 +45,10 @@ export interface DecryptedTextProps {
   encryptedClassName?: string;
   /** Inline style for the wrapper span. */
   style?: CSSProperties;
+  /** Number of trailing characters that reveal more slowly. */
+  slowTail?: number;
+  /** Slowdown factor applied to the trailing characters (1.0 = no change). */
+  slowFactor?: number;
 }
 
 const DEFAULT_CHARS =
@@ -54,12 +59,14 @@ const isPreserved = (ch: string) => ch === ' ' || ch === '\n' || ch === '\t';
 export default function DecryptedText({
   text,
   segments,
-  speed = 50,
+  speed = 30,
   maxIterations = 8,
   characters = DEFAULT_CHARS,
   className = '',
   encryptedClassName = '',
   style,
+  slowTail = 8,
+  slowFactor = 1.15,
 }: DecryptedTextProps) {
   // ── Flatten segments into a token list: one entry per character ──────────
   const tokens = useMemo(() => {
@@ -89,11 +96,74 @@ export default function DecryptedText({
   );
   const [revealedCount, setRevealedCount] = useState(0);
   const [done, setDone] = useState(false);
+  // Guards the automatic viewport trigger so it fires at most once.
+  const [hasAnimated, setHasAnimated] = useState(false);
 
   // ── Refs ─────────────────────────────────────────────────────────────────
   const containerRef = useRef<HTMLSpanElement>(null);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const startedRef = useRef(false);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoStartedRef = useRef(false);
+
+  // ── Per-frame delay: slow down for the trailing characters ───────────────
+  const frameDelay = useCallback(
+    (revealUpTo: number) => {
+      const slowStart = Math.max(0, length - slowTail);
+      return revealUpTo >= slowStart ? speed * slowFactor : speed;
+    },
+    [length, slowTail, slowFactor, speed],
+  );
+
+  // ── Core animation loop (recursive setTimeout for variable speed) ───────
+  const runAnimation = useCallback(() => {
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+
+    let frame = 0;
+    setRevealedCount(0);
+    setDone(false);
+    setDisplay(
+      tokens.map((t) => (isPreserved(t.char) ? t.char : randomChar())),
+    );
+
+    const tick = () => {
+      frame += 1;
+
+      if (frame <= maxIterations) {
+        // Phase 1 — full scramble, preserve whitespace.
+        setDisplay(
+          tokens.map((t) => (isPreserved(t.char) ? t.char : randomChar())),
+        );
+        timeoutRef.current = setTimeout(tick, speed);
+        return;
+      }
+
+      // Phase 2 — lock characters left → right, one per frame.
+      const revealUpTo = frame - maxIterations;
+      if (revealUpTo >= length) {
+        setDisplay(tokens.map((t) => t.char));
+        setRevealedCount(length);
+        setDone(true);
+        if (timeoutRef.current) {
+          clearTimeout(timeoutRef.current);
+          timeoutRef.current = null;
+        }
+        return;
+      }
+
+      setRevealedCount(revealUpTo);
+      setDisplay(
+        tokens.map((t, i) => {
+          if (isPreserved(t.char)) return t.char;
+          return i < revealUpTo ? t.char : randomChar();
+        }),
+      );
+      timeoutRef.current = setTimeout(tick, frameDelay(revealUpTo));
+    };
+
+    timeoutRef.current = setTimeout(tick, speed);
+  }, [tokens, length, maxIterations, speed, randomChar, frameDelay]);
 
   // ── Seed the display as fully scrambled whenever tokens change ───────────
   useEffect(() => {
@@ -102,60 +172,21 @@ export default function DecryptedText({
     );
     setRevealedCount(0);
     setDone(false);
-    startedRef.current = false;
+    autoStartedRef.current = false;
   }, [tokens, randomChar]);
 
-  // ── Viewport-triggered one-shot reveal ────────────────────────────────────
+  // ── Viewport-triggered one-shot reveal (fires only once) ──────────────────
   useEffect(() => {
     const el = containerRef.current;
     if (!el || length === 0) return;
 
-    const begin = () => {
-      if (startedRef.current) return;
-      startedRef.current = true;
-
-      let frame = 0;
-      intervalRef.current = setInterval(() => {
-        frame += 1;
-
-        if (frame <= maxIterations) {
-          // Phase 1 — full scramble, preserve whitespace.
-          setDisplay(
-            tokens.map((t) =>
-              isPreserved(t.char) ? t.char : randomChar(),
-            ),
-          );
-          return;
-        }
-
-        // Phase 2 — lock characters left → right, one per frame.
-        const revealUpTo = frame - maxIterations;
-        if (revealUpTo >= length) {
-          setDisplay(tokens.map((t) => t.char));
-          setRevealedCount(length);
-          setDone(true);
-          if (intervalRef.current) {
-            clearInterval(intervalRef.current);
-            intervalRef.current = null;
-          }
-          return;
-        }
-
-        setRevealedCount(revealUpTo);
-        setDisplay(
-          tokens.map((t, i) => {
-            if (isPreserved(t.char)) return t.char;
-            return i < revealUpTo ? t.char : randomChar();
-          }),
-        );
-      }, speed);
-    };
-
     const obs = new IntersectionObserver(
       (entries) => {
         for (const e of entries) {
-          if (e.isIntersecting) {
-            begin();
+          if (e.isIntersecting && !autoStartedRef.current && !hasAnimated) {
+            autoStartedRef.current = true;
+            setHasAnimated(true);
+            runAnimation();
             obs.disconnect();
             break;
           }
@@ -167,12 +198,23 @@ export default function DecryptedText({
 
     return () => {
       obs.disconnect();
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
+    };
+  }, [length, hasAnimated, runAnimation]);
+
+  // ── Manual replay on click ────────────────────────────────────────────────
+  const handleClick = useCallback(() => {
+    runAnimation();
+  }, [runAnimation]);
+
+  // ── Cleanup on unmount ──────────────────────────────────────────────────
+  useEffect(() => {
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
       }
     };
-  }, [tokens, length, maxIterations, speed, randomChar]);
+  }, []);
 
   // ── Render ──────────────────────────────────────────────────────────────
   return (
@@ -180,6 +222,15 @@ export default function DecryptedText({
       ref={containerRef}
       className={className}
       style={{ whiteSpace: 'pre-wrap', ...style }}
+      onClick={handleClick}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          handleClick();
+        }
+      }}
     >
       {tokens.map((t, i) => {
         const ch = display[i] ?? t.char;
