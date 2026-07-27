@@ -4,6 +4,7 @@ import { useCameraScroll } from '@/lib/cameraController';
 import { useCrewBoot } from '@/lib/useCrewBoot';
 import gsap from 'gsap';
 import { IMAGES } from '@/lib/images';
+import TrueFocus from '@/components/TrueFocus';
 
 /* ═══════════════════════════════════════════════════════════════════
    CREW DATA
@@ -99,7 +100,15 @@ function SectionHeader() {
         // CREW DATABASE
       </p>
       <h2 className="crew-boot-title mt-5 font-display text-[clamp(3rem,10vw,7rem)] font-black leading-[0.95] tracking-tight text-white">
-        LEGENDS <span style={{ color: '#FFE600' }}>NEVER</span> DIE.
+        LEGENDS
+        <br />
+        <TrueFocus
+          segments={[
+            { text: 'NEVER', style: { color: '#FFE600' } },
+            { text: ' DIE.' },
+          ]}
+          frameColor="#FF00A8"
+        />
       </h2>
       <p className="crew-boot-subtitle mt-6 font-body text-lg italic text-gray-500">
         Every legend leaves a mark.
