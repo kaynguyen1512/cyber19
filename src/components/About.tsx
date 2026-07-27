@@ -71,30 +71,12 @@ export default function About() {
               // THE DOSSIER
             </div>
 
-           <h2
-  className="mt-6 font-display text-5xl font-black leading-[1.05] tracking-tight sm:text-6xl md:text-7xl"
+<h2
+  className="reveal mt-6 font-display text-5xl font-black leading-[1.05] tracking-tight text-white sm:text-6xl md:text-7xl"
+  style={{ transitionDelay: '80ms' }}
 >
-  <DecryptedText
-    text={"THE CITY"}
-    animateOn="view"
-    sequential
-    speed={45}
-    revealDirection="start"
-    className="text-white"
-    encryptedClassName="text-cyber-cyan/60"
-  />
-
-  <br />
-
-  <DecryptedText
-    text={"NEVER SLEEPS."}
-    animateOn="view"
-    sequential
-    speed={45}
-    revealDirection="start"
-    className="text-cyber-yellow"
-    encryptedClassName="text-cyber-magenta/60"
-  />
+  THE CITY<br />
+  <span className="text-cyber-yellow">NEVER</span> SLEEPS.
 </h2>
 
             <div
