@@ -7,7 +7,7 @@ gsap.registerPlugin(ScrollTrigger);
 /**
  * HowToBuy — acquisition-terminal boot sequence.
  *
- * Fires once when the section scrolls into view. Orchestrates a staged
+ * Fires once when the section scrolls into view. Orchestrates a fast
  * "operating system powering on" reveal using only transform / opacity /
  * filter (no layout animations, no bounce). Reuses the global gsap +
  * ScrollTrigger setup established in useSmoothScroll. The continuous AI
@@ -56,39 +56,35 @@ export function useHowToBuyBoot(rootRef: React.RefObject<HTMLElement>) {
       gsap.set(mfLine, { scaleY: 0, transformOrigin: 'top center', opacity: 0 });
       gsap.set(mfMods, { y: 30, opacity: 0 });
 
-      // ── Boot timeline ────────────────────────────────────────────────
+      // ── Boot timeline — fast reveal, fires as soon as the section starts
+      // entering the viewport (~15-20% visible). All entrance durations are
+      // 0.3-0.4s with near-zero stagger so the whole section appears almost
+      // instantly while staying smooth. Continuous idle/hover/background
+      // animations are untouched.
       const tl = gsap.timeline({
         scrollTrigger: {
           trigger: root,
-          start: 'top 78%',
+          start: 'top 85%',
           once: true,
         },
       });
 
-      tl // 1. Title fades upward
-        .to(title, { opacity: 1, y: 0, duration: 0.6, ease: 'power3.out' })
-        // 2. Subtitle appears
-        .to(subtitle, { opacity: 1, y: 0, duration: 0.5, ease: 'power3.out' }, '-=0.25')
-        // divider draws in
-        .to(divider, { opacity: 1, scaleX: 1, duration: 0.5, ease: 'power2.out' }, '-=0.2')
-        // 3. AI hologram powers on
-        .to(opFrame, { opacity: 1, scale: 1, filter: 'blur(0px) brightness(1)', duration: 0.9, ease: 'power2.out' }, '-=0.1')
-        // 4. HUD rings activate (radar / hex / binary / scanlines / particles / holo circles)
-        .to([opRadar, opHex], { opacity: 1, duration: 0.5, ease: 'power2.out' }, '-=0.5')
-        .to([opScan, opBin], { opacity: 1, duration: 0.5, ease: 'power2.out' }, '-=0.35')
-        .to([opParts, opHolo], { opacity: 1, duration: 0.5, ease: 'power2.out' }, '-=0.35')
-        // operator status panel
-        .to(opStatus, { opacity: 1, y: 0, duration: 0.5, ease: 'power3.out' }, '-=0.3')
-        // 6. Contract terminal boots
-        .to(ct, { opacity: 1, y: 0, duration: 0.6, ease: 'power3.out' }, '-=0.25')
-        .to(nc1, { opacity: 1, y: 0, duration: 0.4, ease: 'power2.out' }, '-=0.15')
-        // 7. Access nodes appear one by one
-        .to(nodes, { opacity: 1, y: 0, duration: 0.45, ease: 'power3.out', stagger: 0.12 }, '-=0.1')
-        .to(nc2, { opacity: 1, y: 0, duration: 0.4, ease: 'power2.out' }, '-=0.1')
-        // 8. Neural data line draws downward
-        .to(mfLine, { opacity: 1, scaleY: 1, duration: 0.7, ease: 'power2.inOut' }, '-=0.05')
-        // 10. Mission modules reveal sequentially
-        .to(mfMods, { opacity: 1, y: 0, duration: 0.5, ease: 'power3.out', stagger: 0.14 }, '-=0.35');
+      tl // 1. Title + subtitle + divider appear together
+        .to(title, { opacity: 1, y: 0, duration: 0.35, ease: 'power3.out' })
+        .to(subtitle, { opacity: 1, y: 0, duration: 0.35, ease: 'power3.out' }, '-=0.2')
+        .to(divider, { opacity: 1, scaleX: 1, duration: 0.3, ease: 'power2.out' }, '-=0.25')
+        // 2. AI hologram powers on (with HUD rings) almost immediately
+        .to(opFrame, { opacity: 1, scale: 1, filter: 'blur(0px) brightness(1)', duration: 0.4, ease: 'power2.out' }, '-=0.3')
+        .to([opRadar, opHex, opScan, opBin, opParts, opHolo], { opacity: 1, duration: 0.3, ease: 'power2.out', stagger: 0.03 }, '-=0.3')
+        .to(opStatus, { opacity: 1, y: 0, duration: 0.3, ease: 'power3.out' }, '-=0.25')
+        // 3. Contract terminal + connector + access nodes appear together
+        .to(ct, { opacity: 1, y: 0, duration: 0.35, ease: 'power3.out' }, '-=0.3')
+        .to(nc1, { opacity: 1, y: 0, duration: 0.3, ease: 'power2.out' }, '-=0.25')
+        .to(nodes, { opacity: 1, y: 0, duration: 0.3, ease: 'power3.out', stagger: 0.04 }, '-=0.25')
+        .to(nc2, { opacity: 1, y: 0, duration: 0.3, ease: 'power2.out' }, '-=0.2')
+        // 4. Mission flow line + modules reveal together
+        .to(mfLine, { opacity: 1, scaleY: 1, duration: 0.35, ease: 'power2.inOut' }, '-=0.2')
+        .to(mfMods, { opacity: 1, y: 0, duration: 0.35, ease: 'power3.out', stagger: 0.05 }, '-=0.3');
 
       // ── Continuous AI animations (run forever after boot) ────────────
       const portrait = root.querySelector<HTMLElement>('.op-portrait');
