@@ -100,12 +100,18 @@ function SectionHeader() {
         // CREW DATABASE
       </p>
       <h2 className="crew-boot-title mt-5 font-display text-[clamp(3rem,10vw,7rem)] font-black leading-[0.95] tracking-tight text-white">
-        LEGENDS
-        <br />
         <TrueFocus
-          segments={[
-            { text: 'NEVER', style: { color: '#FFE600' } },
-            { text: ' DIE.' },
+          block
+          groups={[
+            { content: 'LEGENDS' },
+            {
+              content: (
+                <>
+                  <span style={{ color: '#FFE600' }}>NEVER</span>{' '}
+                  <span>DIE.</span>
+                </>
+              ),
+            },
           ]}
           frameColor="#FF00A8"
         />

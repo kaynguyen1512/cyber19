@@ -1,208 +1,228 @@
 import {
   useEffect,
   useRef,
+  useState,
   useCallback,
-  useMemo,
   type CSSProperties,
+  type ReactNode,
 } from 'react';
 
 /**
- * TrueFocus — neon HUD "focus" reveal inspired by ReactBits' TrueFocus.
+ * TrueFocus — faithful adaptation of the ReactBits TrueFocus component.
  *
- * Pure React + TypeScript. No GSAP, no Motion. Uses requestAnimationFrame
- * for a smooth cinematic timeline driven entirely by direct DOM mutation
- * (no per-frame re-renders).
+ * Instead of splitting a string by spaces into words, this version accepts
+ * arbitrary focus "groups" (each group can be any ReactNode, e.g. multiple
+ * styled spans). Exactly one group is in focus at a time; the others are
+ * blurred. A neon L-bracket HUD frame smoothly moves + resizes to surround
+ * the focused group, alternating forever.
  *
- * The wrapped text starts blurred and is brought into focus while an L-bracket
- * HUD frame assembles around it, glows, then fades away. The animation plays
- * once automatically on first viewport entry; clicking the element replays it.
+ * Pure React + TypeScript + requestAnimationFrame. No GSAP, no Motion.
  */
 
-export interface TrueFocusSegment {
-  text: string;
-  style?: CSSProperties;
+export interface TrueFocusGroup {
+  content: ReactNode;
   className?: string;
 }
 
 export interface TrueFocusProps {
-  /** Plain text mode. Use `segments` for styled sub-parts. */
-  text?: string;
-  /** Rich text mode: array of { text, style, className } segments. */
-  segments?: TrueFocusSegment[];
-  /** className applied to the wrapper span. */
+  groups: TrueFocusGroup[];
   className?: string;
-  /** Neon frame / glow color. */
   frameColor?: string;
-  /** Initial blur radius in px. */
   blurAmount?: number;
-  /** Frame assembly duration (ms). */
-  frameDuration?: number;
-  /** Blur-to-focus duration (ms). */
-  blurDuration?: number;
-  /** Hold-fully-focused duration (ms). */
+  /** Time the frame takes to move/resize between groups (ms). */
+  movementDuration?: number;
+  /** Time spent holding on a group before moving on (ms). */
   pauseDuration?: number;
-  /** Frame fade-out duration (ms). */
-  fadeDuration?: number;
-  /** Padding around the text for the frame, in px. */
+  /** Time to resume auto-cycling after a manual click (ms). */
+  manualResumeDelay?: number;
+  /** Padding around a group for the frame, in px. */
   framePadding?: number;
   /** Length of each corner bracket arm, in px. */
   cornerSize?: number;
   /** Corner bracket border thickness, in px. */
   cornerThickness?: number;
+  /** When true, groups stack vertically (each on its own line). */
+  block?: boolean;
 }
 
-const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
 const easeInOutCubic = (t: number) =>
   t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
 
+interface Rect {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
 export default function TrueFocus({
-  text,
-  segments,
+  groups,
   className = '',
   frameColor = '#FF00A8',
   blurAmount = 5,
-  frameDuration = 500,
-  blurDuration = 500,
-  pauseDuration = 300,
-  fadeDuration = 250,
-  framePadding = 6,
-  cornerSize = 22,
+  movementDuration = 500,
+  pauseDuration = 1000,
+  manualResumeDelay = 1000,
+  framePadding = 8,
+  cornerSize = 24,
   cornerThickness = 2,
+  block = false,
 }: TrueFocusProps) {
-  const segs = useMemo<TrueFocusSegment[]>(
-    () => segments ?? [{ text: text ?? '' }],
-    [text, segments],
-  );
-
+  const count = groups.length;
   const containerRef = useRef<HTMLSpanElement>(null);
-  const textRef = useRef<HTMLSpanElement>(null);
+  const groupRefs = useRef<(HTMLSpanElement | null)[]>([]);
   const frameRef = useRef<HTMLSpanElement>(null);
   const cornersRef = useRef<(HTMLSpanElement | null)[]>([null, null, null, null]);
   const rafRef = useRef<number | null>(null);
-  const hasAnimatedRef = useRef(false);
-  const animatingRef = useRef(false);
 
-  const runAnimation = useCallback(() => {
-    if (animatingRef.current) return;
-    animatingRef.current = true;
-    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+  // Manual focus request: when set, the loop jumps to move toward this group.
+  const manualTargetRef = useRef<number | null>(null);
+  const manualUntilRef = useRef(0);
 
-    const textEl = textRef.current;
-    const frameEl = frameRef.current;
-    const corners = cornersRef.current;
-    if (!textEl || !frameEl) {
-      animatingRef.current = false;
-      return;
-    }
+  // activeIndex only changes when the focused group changes (for cursor/aria).
+  const [activeIndex, setActiveIndex] = useState(0);
 
-    const total = frameDuration + pauseDuration + fadeDuration;
-    const focusStart = frameDuration; // blur done by here
-    const fadeStart = frameDuration + pauseDuration;
-    const start = performance.now();
+  const measureGroup = useCallback((i: number): Rect | null => {
+    const el = groupRefs.current[i];
+    const container = containerRef.current;
+    if (!el || !container) return null;
+    const eb = el.getBoundingClientRect();
+    const cb = container.getBoundingClientRect();
+    return {
+      left: eb.left - cb.left,
+      top: eb.top - cb.top,
+      width: eb.width,
+      height: eb.height,
+    };
+  }, []);
 
-    const tick = (now: number) => {
-      const t = now - start;
-
-      // Blur: 0 → blurDuration, blurAmount → 0
-      const blurP = clamp01(t / blurDuration);
-      const blur = blurAmount * (1 - easeInOutCubic(blurP));
-      textEl.style.filter = blur > 0.05 ? `blur(${blur.toFixed(2)}px)` : 'none';
-
-      // Frame assembly: 0 → frameDuration
-      const frameP = clamp01(t / frameDuration);
-      const frameEase = easeOutCubic(frameP);
-      const frameOpacity = frameEase;
-      const cornerScale = 0.35 + 0.65 * frameEase;
-
-      // Glow strength: ramps in during assembly, holds during pause, fades out
-      let glow = 0;
-      if (t < fadeStart) {
-        glow = frameEase;
-      } else {
-        glow = 1 - clamp01((t - fadeStart) / fadeDuration);
-      }
-
-      frameEl.style.opacity = String(frameOpacity * (t < fadeStart ? 1 : 1 - clamp01((t - fadeStart) / fadeDuration)));
-      // After fade starts, frame opacity drops
-      const frameVis = t < fadeStart ? frameEase : frameEase * (1 - clamp01((t - fadeStart) / fadeDuration));
-      frameEl.style.opacity = String(frameVis);
-
-      const glowIntensity = 6 + 10 * glow;
-      const glowAlpha = 0.5 * glow;
-      for (const c of corners) {
+  const applyFrame = useCallback(
+    (r: Rect, opacity: number, glow: number) => {
+      const frame = frameRef.current;
+      if (!frame) return;
+      const pad = framePadding;
+      frame.style.transform = `translate(${(r.left - pad).toFixed(2)}px, ${(r.top - pad).toFixed(2)}px)`;
+      frame.style.width = `${(r.width + pad * 2).toFixed(2)}px`;
+      frame.style.height = `${(r.height + pad * 2).toFixed(2)}px`;
+      frame.style.opacity = String(opacity);
+      const glowIntensity = 4 + 12 * glow;
+      const glowAlpha = Math.round(clamp01(glow) * 255)
+        .toString(16)
+        .padStart(2, '0');
+      for (const c of cornersRef.current) {
         if (!c) continue;
-        c.style.transform = `scale(${cornerScale.toFixed(3)})`;
-        c.style.opacity = String(frameVis);
-        c.style.boxShadow = `0 0 ${glowIntensity.toFixed(1)}px ${frameColor}${Math.round(glowAlpha * 255)
-          .toString(16)
-          .padStart(2, '0')}`;
+        c.style.boxShadow = `0 0 ${glowIntensity.toFixed(1)}px ${frameColor}${glowAlpha}`;
+      }
+    },
+    [frameColor, framePadding],
+  );
+
+  const applyBlur = useCallback((i: number, blur: number) => {
+    const el = groupRefs.current[i];
+    if (!el) return;
+    el.style.filter = blur > 0.05 ? `blur(${blur.toFixed(2)}px)` : 'none';
+  }, []);
+
+  // Single animation loop: auto-cycles forever, but yields to a manual
+  // click request and resumes auto-cycling after manualResumeDelay.
+  useEffect(() => {
+    if (count < 2) return;
+    let cancelled = false;
+    let from = 0;
+    let to = 1 % count;
+    let phase: 'move' | 'hold' = 'hold';
+    let phaseStart = performance.now();
+    let fromRect: Rect | null = measureGroup(from);
+    let toRect: Rect | null = measureGroup(to);
+
+    // initial: group 0 sharp, others blurred, frame on group 0
+    for (let i = 0; i < count; i++) applyBlur(i, i === from ? 0 : blurAmount);
+    if (fromRect) applyFrame(fromRect, 1, 1);
+    setActiveIndex(from);
+
+    const loop = (now: number) => {
+      if (cancelled) return;
+
+      // Manual request: jump to move from current `to` (the last focused)
+      // toward the requested target, and pause auto-advance for a while.
+      const target = manualTargetRef.current;
+      if (target !== null) {
+        manualTargetRef.current = null;
+        if (target !== to) {
+          from = to;
+          to = target;
+          fromRect = measureGroup(from);
+          toRect = measureGroup(to);
+          phase = 'move';
+          phaseStart = now;
+        }
+        manualUntilRef.current = now + manualResumeDelay;
       }
 
-      if (t >= total) {
-        textEl.style.filter = 'none';
-        frameEl.style.opacity = '0';
-        for (const c of corners) {
-          if (c) {
-            c.style.opacity = '0';
-            c.style.boxShadow = 'none';
-          }
+      const elapsed = now - phaseStart;
+
+      if (phase === 'move') {
+        const p = clamp01(elapsed / movementDuration);
+        const e = easeInOutCubic(p);
+        if (fromRect && toRect) {
+          const r: Rect = {
+            left: fromRect.left + (toRect.left - fromRect.left) * e,
+            top: fromRect.top + (toRect.top - fromRect.top) * e,
+            width: fromRect.width + (toRect.width - fromRect.width) * e,
+            height: fromRect.height + (toRect.height - fromRect.height) * e,
+          };
+          applyFrame(r, 1, 1);
         }
-        animatingRef.current = false;
-        rafRef.current = null;
-        return;
+        applyBlur(from, blurAmount * e);
+        applyBlur(to, blurAmount * (1 - e));
+
+        if (p >= 1) {
+          applyBlur(from, blurAmount);
+          applyBlur(to, 0);
+          setActiveIndex(to);
+          phase = 'hold';
+          phaseStart = now;
+        }
+      } else {
+        if (toRect) applyFrame(toRect, 1, 1);
+        if (now >= manualUntilRef.current && elapsed >= pauseDuration) {
+          from = to;
+          to = (to + 1) % count;
+          fromRect = measureGroup(from);
+          toRect = measureGroup(to);
+          phase = 'move';
+          phaseStart = now;
+        }
       }
-      rafRef.current = requestAnimationFrame(tick);
+      rafRef.current = requestAnimationFrame(loop);
     };
 
-    rafRef.current = requestAnimationFrame(tick);
-  }, [blurAmount, blurDuration, fadeDuration, frameColor, frameDuration, pauseDuration, cornerSize]);
+    rafRef.current = requestAnimationFrame(loop);
 
-  // One-shot viewport trigger
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el || hasAnimatedRef.current) return;
-    const obs = new IntersectionObserver(
-      (entries) => {
-        for (const e of entries) {
-          if (e.isIntersecting && !hasAnimatedRef.current) {
-            hasAnimatedRef.current = true;
-            obs.disconnect();
-            runAnimation();
-            break;
-          }
-        }
-      },
-      { threshold: 0.2 },
-    );
-    obs.observe(el);
-    return () => obs.disconnect();
-  }, [runAnimation]);
+    const onResize = () => {
+      fromRect = measureGroup(from);
+      toRect = measureGroup(to);
+    };
+    window.addEventListener('resize', onResize);
 
-  // Click replay
-  const handleClick = useCallback(() => {
-    runAnimation();
-  }, [runAnimation]);
-
-  // Cleanup
-  useEffect(() => {
     return () => {
+      cancelled = true;
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
-      animatingRef.current = false;
+      window.removeEventListener('resize', onResize);
     };
+  }, [count, movementDuration, pauseDuration, manualResumeDelay, blurAmount, measureGroup, applyFrame, applyBlur]);
+
+  const focusGroup = useCallback((i: number) => {
+    manualTargetRef.current = i;
   }, []);
 
   const cornerBase: CSSProperties = {
     position: 'absolute',
     width: cornerSize,
     height: cornerSize,
-    transformOrigin: 'center',
-    transform: 'scale(0.35)',
-    opacity: 0,
     pointerEvents: 'none',
-    transition: 'none',
   };
-
   const cornerStyle = (pos: 0 | 1 | 2 | 3): CSSProperties => {
     const o = framePadding;
     const map: CSSProperties[] = [
@@ -218,34 +238,36 @@ export default function TrueFocus({
     <span
       ref={containerRef}
       className={className}
-      onClick={handleClick}
-      role="button"
-      tabIndex={0}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          handleClick();
-        }
-      }}
-      style={{ position: 'relative', display: 'inline-block', cursor: 'pointer' }}
+      style={{ position: 'relative', display: 'inline-block' }}
     >
-      <span
-        ref={textRef}
-        style={{ display: 'inline-block', filter: `blur(${blurAmount}px)` }}
-      >
-        {segs.map((s, i) => (
-          <span key={i} className={s.className} style={s.style}>
-            {s.text}
-          </span>
-        ))}
-      </span>
+      {groups.map((g, i) => (
+        <span
+          key={i}
+          ref={(el) => { groupRefs.current[i] = el; }}
+          className={g.className}
+          onClick={(e) => {
+            e.stopPropagation();
+            focusGroup(i);
+          }}
+          style={{
+            display: block ? 'block' : 'inline-block',
+            cursor: 'pointer',
+            filter: i === 0 ? 'none' : `blur(${blurAmount}px)`,
+          }}
+          aria-label={`Focus group ${i + 1}`}
+        >
+          {g.content}
+        </span>
+      ))}
       <span
         ref={frameRef}
         style={{
           position: 'absolute',
-          inset: -framePadding,
+          top: 0,
+          left: 0,
           opacity: 0,
           pointerEvents: 'none',
+          willChange: 'transform, width, height, opacity',
         }}
       >
         <span ref={(el) => { cornersRef.current[0] = el; }} style={cornerStyle(0)} />
