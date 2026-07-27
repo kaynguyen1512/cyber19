@@ -97,7 +97,7 @@ export default function DecryptedText({
   const [revealedCount, setRevealedCount] = useState(0);
   const [done, setDone] = useState(false);
   // Guards the automatic viewport trigger so it fires at most once.
-  const [hasAnimated, setHasAnimated] = useState(false);
+  const hasAnimatedRef = useRef(false);
 
   // ── Refs ─────────────────────────────────────────────────────────────────
   const containerRef = useRef<HTMLSpanElement>(null);
