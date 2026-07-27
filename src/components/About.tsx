@@ -18,10 +18,6 @@ const MANIFESTO = [
 
 export default function About() {
   const sectionRef = useRef<HTMLElement>(null);
-  const scanRef = useRef<HTMLDivElement>(null);
-  const stripsRef = useRef<HTMLDivElement>(null);
-  const flashRef = useRef<HTMLDivElement>(null);
-  const dispMapRef = useRef<SVGFEDisplacementMapElement>(null);
   const imgRef = useRef<HTMLDivElement>(null);
   const [offset, setOffset] = useState(0);
 
