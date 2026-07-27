@@ -285,14 +285,14 @@ const aboutGlitchStyles = `
     drop-shadow(3px 0 0 rgba(0,220,255,.45));
 }
 .ab-scan-magenta {
-  transform: translateX(6px);
+  transform: translateX(5px);
 
-  background: rgba(255,45,166,.20);
+  background: rgba(185,40,255,.18);
 
   filter:
-    blur(.6px)
-    drop-shadow(0 0 8px rgba(255,45,166,.75))
-    drop-shadow(-4px 0 0 rgba(255,45,166,.55));
+    blur(.5px)
+    drop-shadow(0 0 6px rgba(185,40,255,.55))
+    drop-shadow(-3px 0 0 rgba(185,40,255,.45));
 }
 
 /* Fractal-noise overlay — high-frequency digital noise, ~15fps steps.
