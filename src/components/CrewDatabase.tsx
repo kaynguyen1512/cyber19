@@ -1,4 +1,4 @@
-code 2: "import { useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 
 import type { CSSProperties } from 'react';
 
@@ -2053,5 +2053,3 @@ function Bolt({ style }: { style: CSSProperties }) {
   );
 
 }
-
-".
