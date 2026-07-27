@@ -124,15 +124,6 @@ function CrewScene({ member, index, refs }: { member: CrewMember; index: number;
   const isFinal = member.side === 'center';
   const isLeft = member.side === 'left';
   const sceneRootRef = useRef<HTMLDivElement | null>(null);
-  const nameElRef = useRef<HTMLHeadingElement | null>(null);
-
-  const handleHover = () => {
-    const scene = sceneRootRef.current;
-    const name = nameElRef.current;
-    if (!scene || !name) return;
-    if (parseFloat(scene.style.opacity || '0') < 0.5) return;
-    triggerCrewGlitch(scene, name);
-  };
 
   const sceneStyle: CSSProperties = {
     position: 'absolute',
@@ -220,7 +211,7 @@ transform: `translateZ(${-START_Z - index * SPACING}px)`,
   <div className="crew-divider mt-4 w-32" />
 </div>
       <h3
-        ref={(el) => { nameElRef.current = el; refs.text(2, el); }}
+        ref={(el) => refs.text(2, el)}
         data-final-name={member.name}
         className={`crew-name mt-4 font-display font-black leading-[0.92] tracking-tight ${
           isFinal ? 'text-[clamp(3.2rem,9vw,6.5rem)]' : 'text-[clamp(2.6rem,6.5vw,5rem)]'
@@ -239,7 +230,6 @@ transform: `translateZ(${-START_Z - index * SPACING}px)`,
         <div
           className="absolute inset-0 flex flex-col items-center justify-center gap-6 px-6 md:gap-12"
           style={{ transform: 'translateY(-70px)', pointerEvents: 'auto' }}
-          onMouseEnter={handleHover}
         >
           <div style={{ width: 'min(560px,54vw)' }}>{portrait}</div>
           {textBlock}
@@ -248,7 +238,6 @@ transform: `translateZ(${-START_Z - index * SPACING}px)`,
         <div
           className="absolute inset-0 flex items-center justify-center px-6"
           style={{ pointerEvents: 'auto' }}
-          onMouseEnter={handleHover}
         >
           <div
             className="flex items-center gap-6 md:gap-12"
@@ -311,71 +300,6 @@ function startDecode(el: HTMLElement) {
   decodeRafs.set(el, requestAnimationFrame(step));
 }
 
-// Hover-triggered synchronized glitch: the whole crew record (card, image,
-// name) shakes together while the entire name decodes left→right through
-// random futuristic characters. ~780–900ms. Cannot retrigger while playing;
-// replays on every fresh mouseenter. Preserves original letter casing.
-const HOVER_DECODE_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789#$%&@!?+=<>[]{}/*';
-// Same pattern as decodeRafs — guarantees one glitch RAF per name element.
-const glitchRafs = new WeakMap<HTMLElement, number>();
-function triggerCrewGlitch(sceneEl: HTMLElement, nameEl: HTMLElement) {
-  if (nameEl.dataset.decoding === '1') return;
-  nameEl.dataset.decoding = '1';
-  sceneEl.classList.add('crew-glitch');
-  nameEl.classList.add('crew-decoding');
-
-  const finalText = nameEl.dataset.finalName || nameEl.textContent || '';
-  const len = finalText.length;
-  if (!len) {
-    nameEl.dataset.decoding = '';
-    sceneEl.classList.remove('crew-glitch');
-    nameEl.classList.remove('crew-decoding');
-    return;
-  }
-
-  const totalDuration = 780 + Math.random() * 120; // 780–900ms
-  const glitchPhase = 90 + Math.random() * 30;    // 90–120ms RGB glitch
-  const startTs = performance.now();
-
-  const step = (now: number) => {
-    const elapsed = now - startTs;
-
-    if (elapsed >= totalDuration) {
-      nameEl.textContent = finalText;
-      sceneEl.classList.remove('crew-glitch');
-      nameEl.classList.remove('crew-decoding');
-      nameEl.classList.add('crew-fadeout');
-      glitchRafs.delete(nameEl);
-      window.setTimeout(() => {
-        nameEl.classList.remove('crew-fadeout');
-        nameEl.dataset.decoding = '';
-      }, 350);
-      return;
-    }
-
-    let resolved: number;
-    if (elapsed < glitchPhase) {
-      resolved = 0;
-    } else {
-      const decodeT = (elapsed - glitchPhase) / (totalDuration - glitchPhase);
-      resolved = Math.floor(decodeT * len);
-    }
-
-    let out = '';
-    for (let i = 0; i < len; i++) {
-      const ch = finalText[i];
-      if (ch === ' ' || i < resolved) {
-        out += ch;
-      } else {
-        out += HOVER_DECODE_CHARS[(Math.random() * HOVER_DECODE_CHARS.length) | 0];
-      }
-    }
-    nameEl.textContent = out;
-    glitchRafs.set(nameEl, requestAnimationFrame(step));
-  };
-  glitchRafs.set(nameEl, requestAnimationFrame(step));
-}
-
 // Progressive text reveal: FILE → CODENAME → NAME (timing unchanged).
 // Slots 0–2 are the decoded labels; slot 3 (metadata + divider) rides the
 // codename's timing, slot 4 (status LED) rides the FILE label's timing.
@@ -427,7 +351,6 @@ function revealText(els: (HTMLElement | null)[], f: number, cache: SceneCache) {
 function useCrewEngine(
   sectionRef: React.RefObject<HTMLElement | null>,
   sceneRefs: React.RefObject<(HTMLDivElement | null)[]>,
-  bgRefs: React.RefObject<(HTMLDivElement | null)[]>,
   textRefs: React.RefObject<(HTMLElement | null)[][]>,
 ) {
   const cacheRef = useRef<(SceneCache | null)[]>([]);
@@ -440,10 +363,9 @@ function useCrewEngine(
     (p) => (p < P_CAMERA ? (p / P_CAMERA) * CAMERA_TRAVEL : CAMERA_TRAVEL),
     (offset) => {
       const scenes = sceneRefs.current;
-      const bgs = bgRefs.current;
       const texts = textRefs.current;
       const caches = cacheRef.current;
-      if (!scenes || !bgs || !texts) return;
+      if (!scenes || !texts) return;
 
       // Active-scene windowing: only update current ± 1. All other scenes are
       // frozen at their last-written values (always opacity 0 when they left
@@ -476,15 +398,6 @@ function useCrewEngine(
           cache.opacity = opStr;
         }
 
-        const bg = bgs[i];
-        if (bg) {
-          const bgOpStr = String(op * 0.55);
-          if (bgOpStr !== cache.bgOpacity) {
-            bg.style.opacity = bgOpStr;
-            cache.bgOpacity = bgOpStr;
-          }
-        }
-
         // Throttled reveal: skip revealText entirely when the reveal
         // parameter hasn't moved enough to produce a visible change.
         let f: number;
@@ -498,7 +411,7 @@ function useCrewEngine(
           // Others reveal as they approach the camera.
           f = (z + REVEAL_START) / REVEAL_START;
         }
-        if (Math.abs(f - cache.revealF) >= REVEAL_THRESHOLD) {
+        if (Number.isNaN(cache.revealF) || Math.abs(f - cache.revealF) >= REVEAL_THRESHOLD) {
           cache.revealF = f;
           revealText(texts[i] ?? [], f, cache);
         }
@@ -514,10 +427,9 @@ function useCrewEngine(
 export default function CrewDatabase() {
   const sectionRef = useRef<HTMLElement | null>(null);
   const sceneRefs = useRef<(HTMLDivElement | null)[]>([]);
-  const bgRefs = useRef<(HTMLDivElement | null)[]>([]);
   const textRefs = useRef<(HTMLElement | null)[][]>([]);
 
-  useCrewEngine(sectionRef, sceneRefs, bgRefs, textRefs);
+  useCrewEngine(sectionRef, sceneRefs, textRefs);
 
   return (
     <section ref={sectionRef} id="crew" className="relative bg-[#050507]">
@@ -536,19 +448,15 @@ export default function CrewDatabase() {
             overflow: 'hidden',
           }}
         >
-          {/* Background atmosphere — each character owns its own fullscreen bg */}
+          {/* Background atmosphere — single static background for the entire Crew section */}
           <div className="pointer-events-none absolute inset-0" style={{ zIndex: 0 }}>
-            {CREW.map((m, i) => (
-              <div
-                key={m.name}
-                ref={(el) => { bgRefs.current[i] = el; }}
-                className="absolute inset-0"
-                style={{ opacity: 0 }}
-              >
-                <img src={m.img} alt="" className="h-full w-full object-cover" loading="lazy" />
-                <div className="absolute inset-0 bg-[#050507]/65" />
-              </div>
-            ))}
+            <img
+              src="https://ik.imagekit.io/zznoau6lx/5248762.jpg"
+              alt=""
+              className="h-full w-full object-cover"
+              loading="lazy"
+            />
+            <div className="absolute inset-0 bg-[#050507]/65" />
           </div>
 
           {/* Foreground 3D scene */}
@@ -694,62 +602,6 @@ function CrewFXStyles() {
   animation: crewNameFlow 16s linear infinite;
   transition: filter 0.35s ease-out;
   position: relative;
-}
-.crew-name.crew-decoding {
-  filter: drop-shadow(1px 0 rgba(255,0,168,0.5)) drop-shadow(-1px 0 rgba(0,240,255,0.5)) drop-shadow(0 0 14px rgba(0,240,255,0.6)) drop-shadow(0 0 22px rgba(255,0,168,0.25)) brightness(1.2);
-}
-.crew-name.crew-decoding::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(90deg, transparent 0%, rgba(0,240,255,0.3) 50%, transparent 100%);
-  background-size: 200% 100%;
-  animation: crewNameSweep 0.85s ease-out forwards;
-  pointer-events: none;
-  mix-blend-mode: screen;
-}
-.crew-name.crew-decoding::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: repeating-linear-gradient(0deg, transparent 0, transparent 2px, rgba(0,240,255,0.06) 2px, rgba(0,240,255,0.06) 3px);
-  animation: crewNameScanFade 0.85s ease-out forwards;
-  pointer-events: none;
-}
-.crew-name.crew-fadeout {
-  filter: drop-shadow(0 0 8px rgba(0,240,255,0.28));
-}
-@keyframes crewNameSweep {
-  0% { background-position: -100% 0; }
-  100% { background-position: 100% 0; }
-}
-@keyframes crewNameScanFade {
-  0% { opacity: 0.7; }
-  100% { opacity: 0; }
-}
-
-/* ── Synchronized crew glitch (hover) ── */
-@keyframes crewWellGlitch {
-  0%,100% { filter: none; }
-  10% { filter: drop-shadow(2px 0 rgba(255,0,60,0.55)) drop-shadow(-2px 0 rgba(0,240,255,0.55)); }
-  25% { filter: drop-shadow(-1.5px 0 rgba(255,0,60,0.4)) drop-shadow(1.5px 0 rgba(0,240,255,0.4)); }
-  40% { filter: drop-shadow(2px 0 rgba(255,0,168,0.45)) drop-shadow(-2px 0 rgba(0,240,255,0.45)); }
-  55% { filter: drop-shadow(-1px 0 rgba(255,0,60,0.3)) drop-shadow(1px 0 rgba(0,240,255,0.3)); }
-  70% { filter: drop-shadow(0.5px 0 rgba(255,0,60,0.15)) drop-shadow(-0.5px 0 rgba(0,240,255,0.15)); }
-  85% { filter: none; }
-}
-/* Không rung card */
-.crew-glitch .crew-card {
-}
-
-/* Giữ RGB glitch của ảnh */
-.crew-glitch .crew-card-well {
-  animation: crewWellGlitch 0.85s ease-out forwards;
-}
-
-/* Chỉ giữ gradient chạy */
-.crew-glitch .crew-name {
-  animation: crewNameFlow 16s linear infinite;
 }
 .crew-divider {
   position: relative;
